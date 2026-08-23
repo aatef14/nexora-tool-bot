@@ -12,37 +12,33 @@ to the TOOLS list below.
 from . import (
     archive,
     convert,
-    crypto,
     expense,
     image,
     link2video,
     meme,
-    notes,
     password,
-    poll,
+    password_manager,
     qr,
     reminder,
-    sticker,
-    watermark,
     weather,
     wiki,
 )
 
 TOOLS = [
+    # password_manager's text handler only fires for users mid-flow (via a
+    # HAS_PENDING filter) but must still be checked before link2video's bare
+    # URL-matching handler, in case a pending reply (e.g. a username field)
+    # happens to look like a link — first match wins per Telegram update.
+    password_manager,
     link2video,
     image,
-    watermark,
     meme,
-    sticker,
     qr,
     password,
     convert,
-    notes,
     reminder,
-    poll,
     wiki,
     weather,
-    crypto,
     archive,
     expense,
 ]

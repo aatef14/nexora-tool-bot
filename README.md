@@ -8,20 +8,16 @@ rented server needed.
 
 | Tool | Command | What it does |
 |---|---|---|
+| 🔑 **Nexo Password Manager** | `/password_manager` | An encrypted vault of saved logins — create/sign in, list, reveal, add. |
 | 🎬 **Nexo Link2video** | `/link2video` | Send a video link (YouTube, TikTok, Instagram, X, Facebook, Reddit...) and get it back as MP4 or MP3. |
 | 🖼️ **Nexo Image** | `/image` | Send a photo to compress, resize, convert format, or strip EXIF metadata. |
-| 💧 **Nexo Watermark** | `/watermark` | Send a photo with the watermark text as its caption to stamp it on. |
 | 😂 **Nexo Meme** | `/meme` | Send a photo captioned `top text \| bottom text` for a classic meme. |
-| 🏷️ **Nexo Sticker** | `/sticker` | Reply to a photo with `/sticker` to convert it into a Telegram sticker. |
 | 🔳 **Nexo QR** | `/qr <text>` | Generate a QR code image from text or a link. |
 | 🔐 **Nexo Password** | `/password [length]` | Generate a strong random password. |
 | 📐 **Nexo Convert** | `/convert 10 km to mi` | Convert between length, weight, volume, and temperature units. |
-| 📝 **Nexo Notes** | `/notes add ...` | Quick personal notes — add, list, delete. |
 | ⏰ **Nexo Reminder** | `/remind 10m ...` | Schedule a one-off reminder message. |
-| 📊 **Nexo Poll** | `/poll Q? \| A \| B` | Create a native Telegram poll from a text prompt. |
 | 📖 **Nexo Wiki** | `/wiki <topic>` | Quick Wikipedia summary lookup, no API key needed. |
 | 🌤️ **Nexo Weather** | `/weather <city>` | Current weather for any city, no API key needed. |
-| 💰 **Nexo Crypto** | `/price btc` | Check a cryptocurrency's current USD price. |
 | 📦 **Nexo Archive** | send a `.zip` | Extracts a zip file sent as a document. |
 | 💸 **Nexo Expense** | `/expense add ...` | Log quick expenses with daily/monthly totals. |
 
@@ -146,12 +142,11 @@ nexora-tool-bot/
 ├── webui.py           # Optional local admin web panel
 ├── core/
 │   └── access.py       # Shared whitelist check, used by every tool
-├── data/                # Nexo Notes / Nexo Expense storage (gitignored, created on demand)
+├── data/                # Nexo Password Manager / Nexo Expense storage (gitignored, created on demand)
 └── tools/
     ├── __init__.py      # TOOLS registry — add new tools here
-    ├── link2video.py, image.py, watermark.py, meme.py, sticker.py
-    ├── qr.py, password.py, convert.py, notes.py, reminder.py, poll.py
-    └── wiki.py, weather.py, crypto.py, archive.py, expense.py
+    ├── password_manager.py, link2video.py, image.py, meme.py
+    └── qr.py, password.py, convert.py, reminder.py, wiki.py, weather.py, archive.py, expense.py
 ```
 
 Each tool is a self-contained module under `tools/` exposing a `NAME`,
@@ -214,15 +209,44 @@ before and after, e.g. `2.4MB → 480KB`.
 
 ### Sending a photo: how the bot picks which tool handles it
 
-Four tools react to a photo you send, and the bot picks exactly one based
-on the caption, so they never compete for the same photo:
+Two tools react to a photo you send, and the bot picks exactly one based on
+the caption, so they never compete for the same photo:
 
 | You send a photo... | Handled by |
 |---|---|
-| with no caption | 🖼️ Nexo Image (asks what to do with it) |
+| with no caption, or any caption without `\|` | 🖼️ Nexo Image |
 | captioned `top text \| bottom text` | 😂 Nexo Meme |
-| captioned with anything else (no `\|`) | 💧 Nexo Watermark |
-| as a reply, with `/sticker` | 🏷️ Nexo Sticker |
+
+### Nexo Password Manager: an encrypted vault of saved logins
+
+`/password_manager` creates a vault (first time) or signs you in, protected
+by a **master password that is never stored anywhere** — it's only used to
+derive the encryption key each time, verified against a check value. This
+means **there is no recovery** if you forget it; the vault's entries become
+permanently unreadable.
+
+Once signed in you get three buttons:
+
+```
+🔑 Nexo Password Manager
+[ 📋 List passwords ]
+[ ➕ Add password ]
+[ 🔒 Sign out ]
+```
+
+- **Add password** asks for **Purpose**, then **Username**, then
+  **Password** — one message each. The moment all three are saved
+  (encrypted), the bot deletes those 3 messages from the chat, so the
+  plaintext credentials don't sit in your chat history.
+- **List passwords** shows a button per saved entry, labeled by purpose
+  (e.g. "Instagram"). Tapping one decrypts and shows the username/password
+  in a tap-to-copy code block — that message **auto-deletes after 60
+  seconds**.
+- Your session stays signed in for 10 minutes of activity, then you'll need
+  to sign in again with `/password_manager`.
+- Entries are encrypted with a key derived from your master password via
+  PBKDF2 (390,000 iterations) and Fernet (AES-128) — stored in
+  `data/password_manager.json`, unreadable without the master password.
 
 ### Other tools at a glance
 
@@ -230,14 +254,10 @@ on the caption, so they never compete for the same photo:
 - **Nexo Password**: `/password` (16 chars) or `/password 24 nosymbols`.
 - **Nexo Convert**: `/convert 10 km to mi`, `/convert 100 c to f` — length,
   weight, volume, temperature.
-- **Nexo Notes**: `/notes add Buy milk`, `/notes list`, `/notes del 2`,
-  `/notes clear` — persisted to `data/notes.json`, per user.
 - **Nexo Reminder**: `/remind 2h Call back the client` — fires once; lost
   if the bot restarts before it's due (no persistent job store yet).
-- **Nexo Poll**: `/poll Best day? | Mon | Tue | Wed` — add `| public` as the
-  last segment to make it non-anonymous.
-- **Nexo Wiki** / **Nexo Weather** / **Nexo Crypto**: `/wiki <topic>`,
-  `/weather <city>`, `/price btc` — all free public APIs, no API key needed.
+- **Nexo Wiki** / **Nexo Weather**: `/wiki <topic>`, `/weather <city>` —
+  both free public APIs, no API key needed.
 - **Nexo Archive**: send a `.zip` as a file — extracts it (zip only, up to
   20 files, each under `MAX_FILE_SIZE_MB`).
 - **Nexo Expense**: `/expense add 12.50 lunch`, `/expense today`,
@@ -348,3 +368,6 @@ an issue on the repo.
   fill up your storage.
 - Leftover temp files from any crashed download are swept daily and on
   every startup, so normal use won't accumulate storage over time.
+- Nexo Password Manager depends on the `cryptography` package, which has a
+  compiled component. If `pip install -r requirements.txt` fails to build
+  it on Termux, try `pkg install rust binutils` first, then re-run.
