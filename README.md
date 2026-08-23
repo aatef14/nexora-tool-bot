@@ -239,12 +239,23 @@ Ideas for future additions — each would land as its own module under
 
 - **Nexo Image** — compress, resize, convert, or strip EXIF from photos
 - **Nexo PDF** — merge/split PDFs, convert images ↔ PDF, extract text
+- **Nexo OCR** — extract text from a photo (receipts, screenshots, signs)
 - **Nexo QR** — generate a QR code from text/a link, or decode one from a photo
 - **Nexo Translate** — translate a message or forwarded text between languages
 - **Nexo Notes** — quick personal notes/reminders stored per user
 - **Nexo Convert** — unit and currency conversion
 - **Nexo Shorten** — turn a long URL into a short one (self-hosted)
 - **Nexo Sticker** — turn a photo into a Telegram sticker
+- **Nexo FileConvert** — convert between file formats:
+  - **Images**: JPG, PNG, WEBP, BMP, GIF, HEIC (Pillow — cheap, no extra system deps)
+  - **Audio**: MP3, WAV, OGG, M4A, FLAC (ffmpeg — already installed for Nexo Link2video)
+  - **Video**: MP4, AVI, MKV, WEBM, MOV, animated GIF (ffmpeg — same as above)
+  - **Data**: CSV ↔ JSON ↔ XLSX (pandas/openpyxl — cheap)
+  - **Archives**: ZIP ↔ 7Z/RAR extraction and repacking (py7zr/rarfile)
+  - **Documents**: DOCX/PPTX/XLSX ↔ PDF, HTML ↔ PDF, Markdown ↔ PDF (needs a
+    headless LibreOffice or a rendering engine — heavier to install on a
+    phone than the categories above, so this would ship later as an
+    optional add-on rather than in the first version)
 
 Have a tool you want prioritized, or one to suggest that isn't listed? Open
 an issue on the repo.
