@@ -9,8 +9,9 @@ To add a new tool: write tools/<slug>.py following that shape, then add it
 to the TOOLS list below.
 """
 
-from . import link2video
+from . import image, link2video
 
 TOOLS = [
     link2video,
+    image,
 ]

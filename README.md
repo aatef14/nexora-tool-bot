@@ -9,6 +9,7 @@ rented server needed.
 | Tool | What it does |
 |---|---|
 | 🎬 **Nexo Link2video** | Send a YouTube, YouTube Shorts, Instagram, TikTok, X/Twitter, Facebook, or Reddit video link and get it back as MP4 (video) or MP3 (audio), in a quality you choose. |
+| 🖼️ **Nexo Image** | Send a photo to compress, resize, convert format, or strip EXIF metadata from it. |
 
 More tools are on the way — see [Roadmap](#roadmap-planned-tools) below.
 
@@ -174,6 +175,26 @@ Then a quality menu appears:
 Tap one, and the bot downloads and sends the file back with the title,
 uploader, and duration as the caption.
 
+### Nexo Image: compress, resize, convert, strip EXIF
+
+Send any photo — as a photo, or as a file if you want to preserve full
+original quality — and the bot asks what to do with it:
+
+```
+What would you like to do with it?
+[ 🗜 Compress ]  [ 📐 Resize ]
+[ 🔁 Convert ]   [ 🧹 Strip EXIF ]
+```
+
+- **Compress**: Light / Medium / Heavy (re-encodes as JPEG at a lower quality)
+- **Resize**: 75% / 50% / 25% of the original dimensions
+- **Convert**: JPEG, PNG, WEBP, or BMP
+- **Strip EXIF**: removes camera/location metadata, no further choices needed
+
+The result always comes back as a file (not a photo), so Telegram doesn't
+re-compress it a second time on the way out. The caption shows the size
+before and after, e.g. `2.4MB → 480KB`.
+
 ---
 
 ## Optional: Nexora Tool Bot Admin Portal (web control panel)
@@ -237,7 +258,6 @@ response, with instructions to send `/id` and pass it to you. Leaving
 Ideas for future additions — each would land as its own module under
 `tools/`, following the same pattern as Nexo Link2video:
 
-- **Nexo Image** — compress, resize, convert, or strip EXIF from photos
 - **Nexo PDF** — merge/split PDFs, convert images ↔ PDF, extract text
 - **Nexo OCR** — extract text from a photo (receipts, screenshots, signs)
 - **Nexo QR** — generate a QR code from text/a link, or decode one from a photo
