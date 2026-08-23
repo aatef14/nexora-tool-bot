@@ -99,12 +99,18 @@ async def set_bot_info(app: Application) -> None:
         commands.append(BotCommand(tool.COMMAND, tool.NAME))
     await app.bot.set_my_commands(commands)
     await app.bot.set_my_name(BOT_NAME)
-    tool_names = ", ".join(t.NAME for t in TOOLS)
-    await app.bot.set_my_description(
-        f"{BOT_NAME}: a growing collection of utility tools in one bot. "
-        f"Currently available: {tool_names}."
+
+    # Telegram caps set_my_description at 512 chars and set_my_short_description
+    # at 120 — listing every tool by name doesn't scale as more get added, so
+    # just state the count and point to /tools for the actual list.
+    description = (
+        f"{BOT_NAME}: a growing collection of utility tools in one bot "
+        f"({len(TOOLS)} so far). Send /tools in a chat with the bot to see "
+        "the full list."
     )
-    await app.bot.set_my_short_description(f"{BOT_NAME}: {tool_names}")
+    short_description = f"{BOT_NAME}: {len(TOOLS)} utility tools. Send /tools for the list."
+    await app.bot.set_my_description(description[:512])
+    await app.bot.set_my_short_description(short_description[:120])
 
 
 def main() -> None:
