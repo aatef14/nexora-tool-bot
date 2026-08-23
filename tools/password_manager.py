@@ -3,7 +3,8 @@
 Flow: /password_manager creates a vault (first time) or signs in (after),
 protected by a master password that is never stored — only used to derive
 an encryption key via PBKDF2, verified against a "canary" token. Signing in
-opens a 10-minute in-memory session; entries are listed by purpose, and
+opens an in-memory session that signs out automatically after 30 seconds of
+inactivity; entries are listed by purpose, and
 revealing one shows the username/password (auto-deleted from the chat after
 a short delay). Adding an entry deletes the purpose/username/password
 messages the user sent, so the plaintext credentials don't linger in chat
@@ -43,19 +44,20 @@ USAGE = (
     f"{EMOJI} {NAME}\n\n"
     "/password_manager — create your vault (first time) or sign in.\n\n"
     "Once signed in you'll get buttons to list saved entries, add a new one "
-    "(Purpose, Username, Password — one message each), or sign out. "
-    "Revealing an entry shows the username/password and auto-deletes after "
-    f"{{auto_delete}} seconds. Adding an entry deletes the 3 messages you "
-    "sent for it, so the plaintext never lingers in this chat.\n\n"
+    "(Purpose, Username, Password — one message each), sign out, or delete "
+    "the whole vault. Revealing an entry shows the username/password and "
+    "auto-deletes after {auto_delete} seconds. Adding an entry deletes the "
+    "3 messages you sent for it, so the plaintext never lingers in this "
+    "chat. Signing in expires after {session_ttl} seconds of inactivity.\n\n"
     "Your master password is never stored — only used to derive the "
     "encryption key. There is NO recovery if you forget it."
-).format(auto_delete=60)
+).format(auto_delete=60, session_ttl=30)
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 VAULT_FILE = os.path.join(DATA_DIR, "password_manager.json")
 
 MIN_MASTER_LENGTH = 8
-SESSION_TTL_SECONDS = 10 * 60
+SESSION_TTL_SECONDS = 30
 PENDING_TTL_SECONDS = 10 * 60
 REVEAL_AUTO_DELETE_SECONDS = 60
 PBKDF2_ITERATIONS = 390_000
@@ -149,6 +151,16 @@ def _menu_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton("📋 List passwords", callback_data="pm:list")],
             [InlineKeyboardButton("➕ Add password", callback_data="pm:addstart")],
             [InlineKeyboardButton("🔒 Sign out", callback_data="pm:signout")],
+            [InlineKeyboardButton("🗑 Delete vault", callback_data="pm:deleteprompt")],
+        ]
+    )
+
+
+def _delete_vault_confirm_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("⚠️ Yes, delete everything", callback_data="pm:deleteconfirm")],
+            [InlineKeyboardButton("⬅ Cancel", callback_data="pm:menu")],
         ]
     )
 
@@ -282,6 +294,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     if stage == "add_purpose":
+        # Each step counts as activity and refreshes the idle timer — only
+        # genuine idle time (not the time spent typing an answer) should
+        # sign the user out mid-flow.
+        if not _get_valid_session(user_id):
+            PENDING.pop(user_id, None)
+            await _delete_message_safe(context, message.chat_id, message.message_id)
+            await message.reply_text("Your session expired. Sign in again with /password_manager.")
+            return
         pending["data"]["purpose"] = text.strip()[:100]
         pending["message_ids"].append(message.message_id)
         pending["stage"] = "add_username"
@@ -289,6 +309,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     if stage == "add_username":
+        if not _get_valid_session(user_id):
+            for mid in pending["message_ids"] + [message.message_id]:
+                await _delete_message_safe(context, message.chat_id, mid)
+            PENDING.pop(user_id, None)
+            await message.reply_text("Your session expired. Sign in again with /password_manager.")
+            return
         pending["data"]["username"] = text.strip()[:200]
         pending["message_ids"].append(message.message_id)
         pending["stage"] = "add_password"
@@ -305,7 +331,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         PENDING.pop(user_id, None)
 
         if not session_key:
-            await message.reply_text("Your session expired before you finished. Sign in again with /password_manager.")
+            for mid in message_ids:
+                await _delete_message_safe(context, message.chat_id, mid)
+            await message.reply_text("Your session expired. Sign in again with /password_manager.")
             return
 
         vaults = _load()
@@ -415,6 +443,25 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.edit_message_text("Deleted.", reply_markup=_menu_keyboard())
         else:
             await query.edit_message_text("Already gone.", reply_markup=_menu_keyboard())
+        return
+
+    if data == "pm:deleteprompt":
+        await query.edit_message_text(
+            "⚠️ This permanently deletes your ENTIRE vault — every saved "
+            "entry — and cannot be undone. Are you sure?",
+            reply_markup=_delete_vault_confirm_keyboard(),
+        )
+        return
+
+    if data == "pm:deleteconfirm":
+        vaults = _load()
+        vaults.pop(user_id, None)
+        _save(vaults)
+        SESSIONS.pop(user_id, None)
+        PENDING.pop(user_id, None)
+        await query.edit_message_text(
+            "🗑 Vault deleted. Send /password_manager to create a new one."
+        )
         return
 
 

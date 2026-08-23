@@ -220,18 +220,22 @@ the caption, so they never compete for the same photo:
 ### Nexo Password Manager: an encrypted vault of saved logins
 
 `/password_manager` creates a vault (first time) or signs you in, protected
-by a **master password that is never stored anywhere** — it's only used to
-derive the encryption key each time, verified against a check value. This
-means **there is no recovery** if you forget it; the vault's entries become
+by a **master password that is never stored anywhere — not even encrypted**.
+It only exists transiently in memory each time you sign in, used to derive
+the encryption key and verify it against a check value; nothing about it
+ever touches disk, so nobody (including you re-reading the vault file, or
+anyone with phone access) can recover it after the fact. This also means
+**there is no recovery** if you forget it — the vault's entries become
 permanently unreadable.
 
-Once signed in you get three buttons:
+Once signed in you get four buttons:
 
 ```
 🔑 Nexo Password Manager
 [ 📋 List passwords ]
 [ ➕ Add password ]
 [ 🔒 Sign out ]
+[ 🗑 Delete vault ]
 ```
 
 - **Add password** asks for **Purpose**, then **Username**, then
@@ -242,11 +246,16 @@ Once signed in you get three buttons:
   (e.g. "Instagram"). Tapping one decrypts and shows the username/password
   in a tap-to-copy code block — that message **auto-deletes after 60
   seconds**.
-- Your session stays signed in for 10 minutes of activity, then you'll need
-  to sign in again with `/password_manager`.
+- **Delete vault** asks for confirmation, then permanently deletes the
+  entire vault — every saved entry — and signs you out. There's no undo;
+  `/password_manager` afterwards starts a brand new vault from scratch.
+- Signing in **expires after 30 seconds of inactivity** — every button tap
+  or step of adding an entry resets that timer, so it only signs you out
+  when you actually walk away, not mid-task.
 - Entries are encrypted with a key derived from your master password via
   PBKDF2 (390,000 iterations) and Fernet (AES-128) — stored in
-  `data/password_manager.json`, unreadable without the master password.
+  `data/password_manager.json`. Without the master password (which, again,
+  is never stored), that file is unreadable noise.
 
 ### Other tools at a glance
 
