@@ -6,10 +6,24 @@ rented server needed.
 
 **Available tools:**
 
-| Tool | What it does |
-|---|---|
-| 🎬 **Nexo Link2video** | Send a YouTube, YouTube Shorts, Instagram, TikTok, X/Twitter, Facebook, or Reddit video link and get it back as MP4 (video) or MP3 (audio), in a quality you choose. |
-| 🖼️ **Nexo Image** | Send a photo to compress, resize, convert format, or strip EXIF metadata from it. |
+| Tool | Command | What it does |
+|---|---|---|
+| 🎬 **Nexo Link2video** | `/link2video` | Send a video link (YouTube, TikTok, Instagram, X, Facebook, Reddit...) and get it back as MP4 or MP3. |
+| 🖼️ **Nexo Image** | `/image` | Send a photo to compress, resize, convert format, or strip EXIF metadata. |
+| 💧 **Nexo Watermark** | `/watermark` | Send a photo with the watermark text as its caption to stamp it on. |
+| 😂 **Nexo Meme** | `/meme` | Send a photo captioned `top text \| bottom text` for a classic meme. |
+| 🏷️ **Nexo Sticker** | `/sticker` | Reply to a photo with `/sticker` to convert it into a Telegram sticker. |
+| 🔳 **Nexo QR** | `/qr <text>` | Generate a QR code image from text or a link. |
+| 🔐 **Nexo Password** | `/password [length]` | Generate a strong random password. |
+| 📐 **Nexo Convert** | `/convert 10 km to mi` | Convert between length, weight, volume, and temperature units. |
+| 📝 **Nexo Notes** | `/notes add ...` | Quick personal notes — add, list, delete. |
+| ⏰ **Nexo Reminder** | `/remind 10m ...` | Schedule a one-off reminder message. |
+| 📊 **Nexo Poll** | `/poll Q? \| A \| B` | Create a native Telegram poll from a text prompt. |
+| 📖 **Nexo Wiki** | `/wiki <topic>` | Quick Wikipedia summary lookup, no API key needed. |
+| 🌤️ **Nexo Weather** | `/weather <city>` | Current weather for any city, no API key needed. |
+| 💰 **Nexo Crypto** | `/price btc` | Check a cryptocurrency's current USD price. |
+| 📦 **Nexo Archive** | send a `.zip` | Extracts a zip file sent as a document. |
+| 💸 **Nexo Expense** | `/expense add ...` | Log quick expenses with daily/monthly totals. |
 
 More tools are on the way — see [Roadmap](#roadmap-planned-tools) below.
 
@@ -128,13 +142,16 @@ from then on, so it comes back automatically after a restart or crash.
 
 ```
 nexora-tool-bot/
-├── bot.py            # Core: startup, /start, /id, dispatches to tools, housekeeping
+├── bot.py             # Core: startup, /start, /tools, /id, dispatches to tools, housekeeping
 ├── webui.py           # Optional local admin web panel
 ├── core/
 │   └── access.py       # Shared whitelist check, used by every tool
+├── data/                # Nexo Notes / Nexo Expense storage (gitignored, created on demand)
 └── tools/
-    ├── __init__.py     # TOOLS registry — add new tools here
-    └── link2video.py   # Nexo Link2video: the video/audio downloader
+    ├── __init__.py      # TOOLS registry — add new tools here
+    ├── link2video.py, image.py, watermark.py, meme.py, sticker.py
+    ├── qr.py, password.py, convert.py, notes.py, reminder.py, poll.py
+    └── wiki.py, weather.py, crypto.py, archive.py, expense.py
 ```
 
 Each tool is a self-contained module under `tools/` exposing a `NAME`,
@@ -194,6 +211,37 @@ What would you like to do with it?
 The result always comes back as a file (not a photo), so Telegram doesn't
 re-compress it a second time on the way out. The caption shows the size
 before and after, e.g. `2.4MB → 480KB`.
+
+### Sending a photo: how the bot picks which tool handles it
+
+Four tools react to a photo you send, and the bot picks exactly one based
+on the caption, so they never compete for the same photo:
+
+| You send a photo... | Handled by |
+|---|---|
+| with no caption | 🖼️ Nexo Image (asks what to do with it) |
+| captioned `top text \| bottom text` | 😂 Nexo Meme |
+| captioned with anything else (no `\|`) | 💧 Nexo Watermark |
+| as a reply, with `/sticker` | 🏷️ Nexo Sticker |
+
+### Other tools at a glance
+
+- **Nexo QR**: `/qr https://example.com` — sends back a QR code image.
+- **Nexo Password**: `/password` (16 chars) or `/password 24 nosymbols`.
+- **Nexo Convert**: `/convert 10 km to mi`, `/convert 100 c to f` — length,
+  weight, volume, temperature.
+- **Nexo Notes**: `/notes add Buy milk`, `/notes list`, `/notes del 2`,
+  `/notes clear` — persisted to `data/notes.json`, per user.
+- **Nexo Reminder**: `/remind 2h Call back the client` — fires once; lost
+  if the bot restarts before it's due (no persistent job store yet).
+- **Nexo Poll**: `/poll Best day? | Mon | Tue | Wed` — add `| public` as the
+  last segment to make it non-anonymous.
+- **Nexo Wiki** / **Nexo Weather** / **Nexo Crypto**: `/wiki <topic>`,
+  `/weather <city>`, `/price btc` — all free public APIs, no API key needed.
+- **Nexo Archive**: send a `.zip` as a file — extracts it (zip only, up to
+  20 files, each under `MAX_FILE_SIZE_MB`).
+- **Nexo Expense**: `/expense add 12.50 lunch`, `/expense today`,
+  `/expense month`, `/expense clear` — persisted to `data/expenses.json`.
 
 ---
 
@@ -255,27 +303,32 @@ response, with instructions to send `/id` and pass it to you. Leaving
 
 ## Roadmap (planned tools)
 
-Ideas for future additions — each would land as its own module under
-`tools/`, following the same pattern as Nexo Link2video:
+16 tools have shipped so far (table above). Ideas for future additions —
+each would land as its own module under `tools/`, following the same
+pattern:
 
 - **Nexo PDF** — merge/split PDFs, convert images ↔ PDF, extract text
-- **Nexo OCR** — extract text from a photo (receipts, screenshots, signs)
-- **Nexo QR** — generate a QR code from text/a link, or decode one from a photo
-- **Nexo Translate** — translate a message or forwarded text between languages
-- **Nexo Notes** — quick personal notes/reminders stored per user
-- **Nexo Convert** — unit and currency conversion
+- **Nexo OCR** — extract text from a photo (receipts, screenshots, signs) —
+  needs a system `tesseract` binary, not guaranteed to be on the phone
+- **Nexo Translate** — translate text between languages
 - **Nexo Shorten** — turn a long URL into a short one (self-hosted)
-- **Nexo Sticker** — turn a photo into a Telegram sticker
+- **Nexo RSS** — fetch the latest items from a feed URL on demand
 - **Nexo FileConvert** — convert between file formats:
-  - **Images**: JPG, PNG, WEBP, BMP, GIF, HEIC (Pillow — cheap, no extra system deps)
-  - **Audio**: MP3, WAV, OGG, M4A, FLAC (ffmpeg — already installed for Nexo Link2video)
-  - **Video**: MP4, AVI, MKV, WEBM, MOV, animated GIF (ffmpeg — same as above)
-  - **Data**: CSV ↔ JSON ↔ XLSX (pandas/openpyxl — cheap)
-  - **Archives**: ZIP ↔ 7Z/RAR extraction and repacking (py7zr/rarfile)
-  - **Documents**: DOCX/PPTX/XLSX ↔ PDF, HTML ↔ PDF, Markdown ↔ PDF (needs a
-    headless LibreOffice or a rendering engine — heavier to install on a
-    phone than the categories above, so this would ship later as an
-    optional add-on rather than in the first version)
+  - **Images/Audio/Video** (Pillow/ffmpeg — cheap, ffmpeg already installed for Link2video)
+  - **Data**: CSV ↔ JSON ↔ XLSX (pandas/openpyxl)
+  - **Archives**: 7Z/RAR support beyond the zip Nexo Archive already handles
+  - **Documents**: DOCX/PPTX/XLSX ↔ PDF (needs headless LibreOffice — heavier
+    to install on a phone, would ship later as an optional add-on)
+- **AI-powered tools** (would need a Claude/LLM API key in `.env`):
+  **Nexo AI Chat** (general assistant), **Nexo Summarize** (summarize a
+  long article/PDF), **Nexo Ask** (ask about a photo/document)
+- **Device-utility tools** (using Termux:API, already a required install):
+  **Nexo Device** (battery/storage/uptime), **Nexo Torch**, **Nexo Notify**,
+  **Nexo SpeedTest**
+- **Privacy-sensitive, needs a deliberate decision before building**:
+  Nexo Locate (GPS), Nexo SMS, Nexo Contacts — real value, but only worth
+  it if you're confident the whitelist can't be compromised, since they'd
+  expose real personal data/hardware on your line
 
 Have a tool you want prioritized, or one to suggest that isn't listed? Open
 an issue on the repo.

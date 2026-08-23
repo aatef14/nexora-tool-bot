@@ -270,5 +270,10 @@ def register(app: Application) -> None:
     app.add_handler(CommandHandler(COMMAND, command))
     app.add_handler(CallbackQueryHandler(handle_action_choice, pattern=r"^img:act:"))
     app.add_handler(CallbackQueryHandler(handle_run_choice, pattern=r"^img:run:"))
-    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_photo))
+    # Captioned photos are claimed by Nexo Watermark (plain caption) or Nexo
+    # Meme (caption containing "|") instead — only handle captionless ones
+    # here, so the three tools don't race for the same photo message.
+    app.add_handler(
+        MessageHandler((filters.PHOTO & ~filters.CAPTION) | filters.Document.IMAGE, handle_photo)
+    )
     cleanup()

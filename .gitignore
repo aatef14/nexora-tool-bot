@@ -4,3 +4,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Nexo Notes / Nexo Expense: personal per-user data, not meant for git
+data/
