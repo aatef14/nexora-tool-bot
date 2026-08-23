@@ -1,0 +1,266 @@
+# Nexora Tool Bot
+
+A Telegram bot that bundles a growing collection of self-hosted utility
+tools behind one bot. It runs on your own Android phone via Termux — no
+rented server needed.
+
+**Available tools:**
+
+| Tool | What it does |
+|---|---|
+| 🎬 **Nexo Link2video** | Send a YouTube, YouTube Shorts, Instagram, TikTok, X/Twitter, Facebook, or Reddit video link and get it back as MP4 (video) or MP3 (audio), in a quality you choose. |
+
+More tools are on the way — see [Roadmap](#roadmap-planned-tools) below.
+
+---
+
+## 1. Install Termux on your phone
+
+Don't use the Play Store version — it's outdated and broken for this use case.
+Install from **F-Droid** instead:
+
+1. Open your phone's browser and go to `f-droid.org`
+2. Download and install the F-Droid app (your phone will warn about
+   "installing unknown apps" — allow it for your browser just for this)
+3. Open F-Droid, search for **Termux**, and install it
+4. In F-Droid, also search for and install **Termux:Boot** and
+   **Termux:API** (same publisher — needed later for auto-start and battery
+   control)
+
+## 2. Stop Android from killing the bot in the background
+
+Android aggressively kills background apps to save battery, which would stop
+the bot. Do this once:
+
+1. **Settings → Apps → Termux → Battery** → set to **Unrestricted**
+2. **Settings → Apps → Termux:Boot → Battery** → set to **Unrestricted**
+3. **Settings → Battery → Battery optimization** → find Termux → **Don't optimize**
+4. Open Termux, swipe it into your **Recent Apps** tray, and tap the pin/lock
+   icon so a "clear all" swipe doesn't kill it
+
+(No root required for any of this.)
+
+## 3. Get a bot token from Telegram
+
+1. In Telegram, search for **@BotFather** (the official one, verified checkmark)
+2. Send it `/newbot`
+3. Give it a display name — e.g. `Nexora Tool Bot` — then a username ending
+   in `bot` (e.g. `nexora_tool_bot`)
+4. BotFather replies with a token like `7123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxx`
+   — copy it, you'll need it in step 5. **Keep it private** — anyone with it
+   can control your bot.
+
+The bot also sets its own display name to "Nexora Tool Bot" automatically on
+startup via the Telegram API, so it'll show that name even if you picked
+something else with BotFather.
+
+## 4. Clone and set up the bot
+
+Open Termux and run:
+
+```bash
+pkg install -y git
+git clone https://github.com/aatef14/nexora-tool-bot.git
+cd nexora-tool-bot
+bash setup.sh
+```
+
+`setup.sh` installs Python, Node, ffmpeg, and all Python dependencies, sets
+up storage access, and configures auto-start on reboot.
+
+## 5. Add your bot token
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+Set `BOT_TOKEN=` to the token from step 3. Save with `Ctrl+O`, `Enter`, then
+exit with `Ctrl+X`.
+
+## 6. (Recommended) Lock the bot to just you
+
+By default, **anyone who finds your bot's username on Telegram can use it**
+— usernames are public and searchable. See [Whitelisting](#whitelisting-restricting-who-can-use-the-bot)
+below to restrict it to yourself before going further. The whitelist applies
+to every tool in the bot, not just one.
+
+## 7. Run it
+
+```bash
+bash bot-start.sh
+```
+
+This starts the bot in the background — it keeps running even if you close
+Termux. You'll see:
+```
+Bot started in the background.
+View live messages with: bash bot-logs.sh
+Stop it with:            bash bot-stop.sh
+```
+
+Then in Telegram, open a chat with your bot and send `/start`, then `/tools`
+to see the list of available tools — each one has its own command (e.g.
+`/link2video`) that shows how to use it.
+
+**Managing the bot going forward:**
+
+| Action | Command |
+|---|---|
+| Start the bot | `bash bot-start.sh` |
+| Watch live activity/logs | `bash bot-logs.sh` (Ctrl+C stops watching, not the bot) |
+| Stop the bot | `bash bot-stop.sh` |
+| Debug a startup failure | `bash bot-debug.sh` |
+
+If `bash bot-start.sh` reports "Bot failed to start", or the bot just doesn't
+seem to respond, run `bash bot-debug.sh` instead — it runs the bot in the
+foreground (not backgrounded) so the actual error is printed directly to
+your screen instead of only going to `bot.log`. Stop it with `Ctrl+C` once
+you've seen the error.
+
+Reboot your phone once after setup — Termux:Boot will auto-start the bot
+from then on, so it comes back automatically after a restart or crash.
+
+---
+
+## Project structure
+
+```
+nexora-tool-bot/
+├── bot.py            # Core: startup, /start, /id, dispatches to tools, housekeeping
+├── webui.py           # Optional local admin web panel
+├── core/
+│   └── access.py       # Shared whitelist check, used by every tool
+└── tools/
+    ├── __init__.py     # TOOLS registry — add new tools here
+    └── link2video.py   # Nexo Link2video: the video/audio downloader
+```
+
+Each tool is a self-contained module under `tools/` exposing a `NAME`,
+`COMMAND`, `SUMMARY`, and a `register(app)` function that wires up its own
+Telegram command (e.g. `/link2video`) and handlers. Adding a new tool means
+writing one new file and adding it to the `TOOLS` list in
+[`tools/__init__.py`](tools/__init__.py) — the `/tools` menu, the bot's
+command list, and its description all pick it up automatically.
+
+---
+
+## Using a tool: /tools and per-tool commands
+
+- `/start` — a one-line intro to the bot
+- `/tools` — lists every tool currently installed, with its command
+- `/link2video` — shows usage instructions for Nexo Link2video specifically
+
+You don't actually need to run a tool's command to use it — for
+Nexo Link2video, just paste a supported link and the bot picks it up
+automatically. The command is there mainly so `/tools` has something to
+point at, and so you get a reminder of how that tool works.
+
+### Nexo Link2video: choosing MP4/MP3 and quality
+
+Send any supported video link. The bot detects which platform it's from and
+asks you to pick a format:
+
+```
+Detected: YouTube
+Choose a format:
+[ 🎬 MP4 (video) ]  [ 🎵 MP3 (audio) ]
+```
+
+Then a quality menu appears:
+- **MP4**: Best available, 1080p, 720p, 480p, 360p
+- **MP3**: 320 kbps, 192 kbps, 128 kbps
+
+Tap one, and the bot downloads and sends the file back with the title,
+uploader, and duration as the caption.
+
+---
+
+## Optional: Nexora Tool Bot Admin Portal (web control panel)
+
+Instead of typing `bot-start.sh`/`bot-stop.sh`/`bot-logs.sh` in Termux, you
+can run the **Admin Portal** — a small web dashboard on your phone with
+Start/Stop/Restart buttons, whitelist management, and a live log view:
+
+```bash
+bash web-start.sh
+```
+
+Then open **http://localhost:8080** in your phone's own browser (Chrome,
+Firefox, whatever). It's not a separate app — it's a small Python web
+server (Flask) running inside Termux, same as the bot itself.
+
+Stop it with:
+```bash
+bash web-stop.sh
+```
+
+**Security note:** by default it only binds to `127.0.0.1`, so only your
+phone's own browser can reach it. If you set `WEBUI_HOST=0.0.0.0` in `.env`
+to access it from another device on the same WiFi (e.g. a laptop), you
+**must** also set `WEBUI_PASSWORD` — otherwise anyone on your network could
+start/stop your bot.
+
+---
+
+## Whitelisting: restricting who can use the bot
+
+Telegram bots are public by default — anyone who finds the username can
+message it and use your phone's bandwidth/battery/storage. To restrict it to
+yourself (or a few trusted people), for **all tools at once**:
+
+1. Have the person message your bot with `/id` — it replies with their
+   numeric Telegram user ID (e.g. `123456789`) and their username
+2. They send you that ID
+3. Open the **Admin Portal** (`bash web-start.sh`, then `http://localhost:8080`)
+   and add it under **Whitelist** — type the ID, optionally a name to
+   label it (e.g. "Atif"), and tap **Add**. The bot restarts automatically
+   to apply it.
+
+Prefer the terminal? You can edit `.env` directly instead:
+```bash
+nano .env
+```
+Set `ALLOWED_USER_IDS=123456789` (your ID), optionally with a name:
+`ALLOWED_USER_IDS=123456789:Atif`. Comma-separate more entries:
+`ALLOWED_USER_IDS=123456789:Atif,987654321:Sam`. Then restart:
+`bash bot-stop.sh && bash bot-start.sh`
+
+Anyone whose ID isn't in that list gets "This bot is private." instead of a
+response, with instructions to send `/id` and pass it to you. Leaving
+`ALLOWED_USER_IDS` blank allows anyone to use the bot.
+
+---
+
+## Roadmap (planned tools)
+
+Ideas for future additions — each would land as its own module under
+`tools/`, following the same pattern as Nexo Link2video:
+
+- **Nexo Image** — compress, resize, convert, or strip EXIF from photos
+- **Nexo PDF** — merge/split PDFs, convert images ↔ PDF, extract text
+- **Nexo QR** — generate a QR code from text/a link, or decode one from a photo
+- **Nexo Translate** — translate a message or forwarded text between languages
+- **Nexo Notes** — quick personal notes/reminders stored per user
+- **Nexo Convert** — unit and currency conversion
+- **Nexo Shorten** — turn a long URL into a short one (self-hosted)
+- **Nexo Sticker** — turn a photo into a Telegram sticker
+
+Have a tool you want prioritized, or one to suggest that isn't listed? Open
+an issue on the repo.
+
+---
+
+## Notes
+
+- Telegram's standard Bot API caps uploads at 50MB (`MAX_FILE_SIZE_MB` in
+  `.env`). To send larger files you'd need to run your own local Bot API
+  server with credentials from https://my.telegram.org — not covered here.
+- Instagram often rate-limits anonymous requests. If Nexo Link2video
+  downloads start failing, export cookies from a logged-in browser session
+  and point `INSTAGRAM_COOKIES_FILE` at that file in `.env`.
+- Logs are written to `bot.log` in the project folder; it's automatically
+  truncated once it exceeds `MAX_LOG_SIZE_MB` (default 20MB) so it won't
+  fill up your storage.
+- Leftover temp files from any crashed download are swept daily and on
+  every startup, so normal use won't accumulate storage over time.
