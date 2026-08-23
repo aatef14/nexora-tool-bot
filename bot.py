@@ -88,6 +88,18 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     logger.warning("Update handling error: %s", context.error)
 
 
+async def _try_bot_info_call(label: str, coro) -> None:
+    """Run a set_my_* bot-profile call, but never let it block startup.
+    These are purely cosmetic (command menu, name, description shown in the
+    Telegram UI) — not required for the bot to actually process updates —
+    so a transient failure (e.g. Telegram's flood control after repeated
+    restarts) should log a warning and move on, not crash the whole bot."""
+    try:
+        await coro
+    except Exception as e:
+        logger.warning("Skipping %s (non-fatal): %s", label, e)
+
+
 async def set_bot_info(app: Application) -> None:
     commands = [
         BotCommand("start", "About this bot"),
@@ -97,8 +109,6 @@ async def set_bot_info(app: Application) -> None:
     ]
     for tool in TOOLS:
         commands.append(BotCommand(tool.COMMAND, tool.NAME))
-    await app.bot.set_my_commands(commands)
-    await app.bot.set_my_name(BOT_NAME)
 
     # Telegram caps set_my_description at 512 chars and set_my_short_description
     # at 120 — listing every tool by name doesn't scale as more get added, so
@@ -109,8 +119,13 @@ async def set_bot_info(app: Application) -> None:
         "the full list."
     )
     short_description = f"{BOT_NAME}: {len(TOOLS)} utility tools. Send /tools for the list."
-    await app.bot.set_my_description(description[:512])
-    await app.bot.set_my_short_description(short_description[:120])
+
+    await _try_bot_info_call("set_my_commands", app.bot.set_my_commands(commands))
+    await _try_bot_info_call("set_my_name", app.bot.set_my_name(BOT_NAME))
+    await _try_bot_info_call("set_my_description", app.bot.set_my_description(description[:512]))
+    await _try_bot_info_call(
+        "set_my_short_description", app.bot.set_my_short_description(short_description[:120])
+    )
 
 
 def main() -> None:
