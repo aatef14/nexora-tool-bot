@@ -368,6 +368,12 @@ an issue on the repo.
   fill up your storage.
 - Leftover temp files from any crashed download are swept daily and on
   every startup, so normal use won't accumulate storage over time.
-- Nexo Password Manager depends on the `cryptography` package, which has a
-  compiled component. If `pip install -r requirements.txt` fails to build
-  it on Termux, try `pkg install rust binutils` first, then re-run.
+- Nexo Password Manager depends on the `cryptography` package. **Don't let
+  pip build it from source on Termux** — its Rust extension can't compile
+  there (rustup, which pip tries to auto-fetch, doesn't support Android's
+  target triple at all). `setup.sh` already runs `pkg install
+  python-cryptography` (a prebuilt version) before `pip install -r
+  requirements.txt` to avoid this. If you hit a `maturin`/`rustc` build
+  error, run `pkg install python-cryptography` yourself first, then re-run
+  `pip install -r requirements.txt` — it'll see cryptography already
+  satisfied and skip rebuilding it.

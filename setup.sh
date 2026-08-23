@@ -10,6 +10,12 @@ pkg update -y && pkg upgrade -y
 echo "==> Installing Python, Node, ffmpeg, git"
 pkg install -y python nodejs ffmpeg git
 
+echo "==> Installing prebuilt python-cryptography (needed by Nexo Password Manager)"
+# pip can't build the `cryptography` package's Rust extension on Termux —
+# rustup (which it tries to auto-fetch) doesn't support Android's target
+# triple at all. Termux ships a prebuilt wheel for this exact reason.
+pkg install -y python-cryptography
+
 echo "==> Enabling storage access (approve the Android permission prompt)"
 termux-setup-storage
 

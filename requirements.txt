@@ -5,4 +5,4 @@ Flask==3.0.3
 Pillow>=10.4.0
 qrcode>=8.2
 requests>=2.31
-cryptography>=42.0
+cryptography
