@@ -20,6 +20,7 @@ load_dotenv()
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 BOT_NAME = "Nexora Tool Bot"
+OWNER_CONTACT = os.environ.get("OWNER_CONTACT", "Atif")
 
 MAX_LOG_SIZE_MB = int(os.environ.get("MAX_LOG_SIZE_MB", "20"))
 LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot.log")
@@ -86,6 +87,21 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     # normal and self-recovering, so log them as a one-liner instead of a
     # full traceback that makes it look like the bot crashed.
     logger.warning("Update handling error: %s", context.error)
+
+    # Whatever went wrong, the person who sent this update deserves *some*
+    # reply instead of silence — but this can only fire if the phone's own
+    # connection is up long enough to receive their message and send a
+    # reply in the first place. If the phone is genuinely offline, nothing
+    # (bot included) can respond until it's back — that's not fixable from
+    # inside the bot.
+    if isinstance(update, Update) and update.effective_chat:
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"⚠️ Server busy right now — please try again shortly, or message {OWNER_CONTACT}.",
+            )
+        except Exception:
+            pass  # if even this fails, there's nothing more we can do here
 
 
 async def _try_bot_info_call(label: str, coro) -> None:
