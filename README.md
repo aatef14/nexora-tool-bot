@@ -347,56 +347,6 @@ response, with instructions to send `/id` and pass it to you. Leaving
 
 ---
 
-## Optional: local Bot API server (files over 50MB)
-
-Telegram's standard cloud Bot API caps file uploads at **50MB** — this is
-Telegram's limit, not something `MAX_FILE_SIZE_MB` in `.env` can raise on
-its own. The only real way past it is running your own **local Bot API
-server**, a separate process that raises the cap to **2GB**.
-
-**Heads up before you start:** the `telegram-bot-api` binary has no
-official prebuilt release for any platform — it must be compiled from
-source (C++, via `tdlib`). On a phone via Termux this can be slow, and
-isn't guaranteed to succeed depending on your device's RAM/storage. If it
-doesn't work out, rolling back is simple: stop the server and clear
-`LOCAL_BOT_API_URL` in `.env` — everything goes back to exactly how it
-worked before, at the normal 50MB limit.
-
-1. Get `api_id` and `api_hash` from **https://my.telegram.org** → API
-   development tools (log in with your own phone number, create an app —
-   any name/platform is fine). Put them in `.env`:
-   ```
-   TELEGRAM_API_ID=your_api_id
-   TELEGRAM_API_HASH=your_api_hash
-   ```
-2. Get the `telegram-bot-api` binary onto your phone, one of:
-   - `pkg install telegram-bot-api` (try this first — quick if it exists
-     in Termux's repos, but not guaranteed to)
-   - Build from source: `pkg install git cmake make clang` then follow
-     the build instructions at https://github.com/tdlib/telegram-bot-api
-     (look for the Linux build steps — Termux is close enough to a
-     regular Linux userland for this). This compiles `tdlib` itself, which
-     is a large C++ codebase — expect it to take a while and to need
-     several GB of free storage during the build.
-3. Start the server:
-   ```bash
-   bash local-bot-api-start.sh
-   ```
-4. In `.env`, set:
-   ```
-   LOCAL_BOT_API_URL=http://127.0.0.1:8081
-   MAX_FILE_SIZE_MB=2000
-   ```
-5. Restart the bot: `bash bot-stop.sh && bash bot-start.sh`
-
-**To roll back** if it's not working out: `bash local-bot-api-stop.sh`,
-then clear `LOCAL_BOT_API_URL` (and lower `MAX_FILE_SIZE_MB` back to `50`)
-in `.env`, then restart the bot again. The bot code itself always falls
-back to Telegram's normal cloud API whenever `LOCAL_BOT_API_URL` is empty
-— nothing about this setup is a one-way door.
-
----
-
 ## Roadmap (planned tools)
 
 16 tools have shipped so far (table above). Ideas for future additions —
@@ -434,8 +384,8 @@ an issue on the repo.
 ## Notes
 
 - Telegram's standard Bot API caps uploads at 50MB (`MAX_FILE_SIZE_MB` in
-  `.env`) — see [Optional: local Bot API server](#optional-local-bot-api-server-files-over-50mb)
-  above to raise it to 2GB.
+  `.env`). To send larger files you'd need to run your own local Bot API
+  server with credentials from https://my.telegram.org — not covered here.
 - Instagram often rate-limits anonymous requests. If Nexo Link2video
   downloads start failing, export cookies from a logged-in browser session
   and point `INSTAGRAM_COOKIES_FILE` at that file in `.env`.
