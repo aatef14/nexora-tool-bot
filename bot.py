@@ -22,6 +22,12 @@ BOT_TOKEN = os.environ["BOT_TOKEN"]
 BOT_NAME = "Nexora Tool Bot"
 OWNER_CONTACT = os.environ.get("OWNER_CONTACT", "Atif")
 
+# Optional: point at a self-hosted local Bot API server (e.g.
+# http://127.0.0.1:8081) to raise the file-size limit past the standard
+# API's 50MB cap, up to 2GB. Leave unset to use Telegram's regular cloud
+# API exactly as before — this is fully backward compatible.
+LOCAL_BOT_API_URL = os.environ.get("LOCAL_BOT_API_URL", "").strip().rstrip("/")
+
 MAX_LOG_SIZE_MB = int(os.environ.get("MAX_LOG_SIZE_MB", "20"))
 LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot.log")
 CLEANUP_INTERVAL_SECONDS = 24 * 60 * 60
@@ -150,7 +156,11 @@ def main() -> None:
     # https://github.com/python-telegram-bot/python-telegram-bot/issues/4874
     asyncio.set_event_loop(asyncio.new_event_loop())
 
-    app = Application.builder().token(BOT_TOKEN).post_init(set_bot_info).build()
+    builder = Application.builder().token(BOT_TOKEN).post_init(set_bot_info)
+    if LOCAL_BOT_API_URL:
+        builder = builder.base_url(f"{LOCAL_BOT_API_URL}/bot").base_file_url(f"{LOCAL_BOT_API_URL}/file/bot")
+        logger.info("Using local Bot API server at %s", LOCAL_BOT_API_URL)
+    app = builder.build()
     app.add_handler(CommandHandler(["start", "help"], start_command))
     app.add_handler(CommandHandler("tools", tools_command))
     app.add_handler(CommandHandler("id", id_command))

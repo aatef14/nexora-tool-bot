@@ -23,7 +23,7 @@ echo "==> Installing Python dependencies"
 pip install -r requirements.txt
 
 echo "==> Making scripts executable"
-chmod +x bot-start.sh bot-stop.sh bot-logs.sh bot-debug.sh web-start.sh web-stop.sh
+chmod +x bot-start.sh bot-stop.sh bot-logs.sh bot-debug.sh web-start.sh web-stop.sh local-bot-api-start.sh local-bot-api-stop.sh
 
 echo "==> Setting up boot autostart"
 mkdir -p ~/.termux/boot
