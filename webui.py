@@ -18,6 +18,8 @@ from core.access import (
     remove_allowed,
     remove_request,
 )
+from core.tools_state import disable_tool, enable_tool, get_disabled_tools, get_usage_stats
+from tools import TOOLS
 
 load_dotenv()
 
@@ -96,7 +98,7 @@ APP_FRAGMENT = """
     <input type="text" name="name" placeholder="Name (optional)">
     <button class="primary" type="submit">Add</button>
   </form>
-  <p class="hint">Get an ID by having the person send /id to the bot. Changes restart the bot automatically.</p>
+  <p class="hint">Get an ID by having the person send /id to the bot. Changes take effect immediately, no restart needed.</p>
 </div>
 
 <h3>Admins <span class="hint-inline">(can run /status in the bot)</span></h3>
@@ -120,6 +122,27 @@ APP_FRAGMENT = """
     <button class="primary" type="submit">Add</button>
   </form>
   <p class="hint">Being on the whitelist does NOT make someone an admin — this list is separate.</p>
+</div>
+
+<h3>Tools <span class="hint-inline">(toggle instantly, no restart)</span></h3>
+<div class="card">
+  <ul class="entry-list">
+    {% for slug, name, emoji, command, enabled, count, last_used in tool_rows %}
+    <li class="entry-row tool-row">
+      <span class="entry-avatar tool">{{ emoji }}</span>
+      <span class="entry-label">
+        {{ name }} <span class="uid-muted">/{{ command }}</span>
+        <br><span class="uid-muted">Used {{ count }}x{% if last_used %} · last {{ last_used }}{% endif %}</span>
+      </span>
+      {% if enabled %}
+      <button class="small danger" type="button" data-action="/tools/disable" data-slug="{{ slug }}">Disable</button>
+      {% else %}
+      <button class="small primary" type="button" data-action="/tools/enable" data-slug="{{ slug }}">Enable</button>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="hint">A disabled tool tells anyone who tries to use it that it's temporarily off, instead of silently doing nothing.</p>
 </div>
 
 <h3>Live Log</h3>
@@ -324,6 +347,7 @@ PAGE = """
   }
   .entry-avatar.admin { background: var(--amber-bg); color: var(--amber); }
   .entry-avatar.request { background: var(--red-bg); color: var(--red); }
+  .entry-avatar.tool { background: #232733; font-size: 1rem; }
   .entry-label { flex: 1; }
   .request-row { align-items: flex-start; }
   .request-row .entry-label { line-height: 1.4; }
@@ -450,6 +474,7 @@ async function runAction(action, btn, form) {
 
   const body = new URLSearchParams();
   if (btn && btn.dataset.userId) body.set('user_id', btn.dataset.userId);
+  if (btn && btn.dataset.slug) body.set('slug', btn.dataset.slug);
   if (form) new FormData(form).forEach((v, k) => body.set(k, v));
 
   if (PENDING_LABELS[action]) setPendingBadge(PENDING_LABELS[action]);
@@ -572,7 +597,28 @@ def build_context() -> dict:
             (str(r["id"]), r.get("name", ""), r.get("username", ""), r.get("requested_at", "")[:16].replace("T", " "))
             for r in get_requests()
         ],
+        tool_rows=_build_tool_rows(),
     )
+
+
+def _build_tool_rows() -> list[tuple]:
+    disabled = set(get_disabled_tools())
+    usage = get_usage_stats()
+    rows = []
+    for tool in TOOLS:
+        stats = usage.get(tool.SLUG, {})
+        rows.append(
+            (
+                tool.SLUG,
+                tool.NAME,
+                tool.EMOJI,
+                tool.COMMAND,
+                tool.SLUG not in disabled,
+                stats.get("count", 0),
+                (stats.get("last_used") or "")[:16].replace("T", " "),
+            )
+        )
+    return rows
 
 
 @app.route("/")
@@ -625,9 +671,8 @@ def whitelist_add():
     if not add_allowed(int(new_id), name):
         return jsonify({"ok": False, "message": f"{new_id} is already whitelisted."})
 
-    restart_bot_async(only_if_running=True)
     label = f"{new_id} ({name})" if name else new_id
-    return jsonify({"ok": True, "message": f"Added {label} to the whitelist. Restarting to apply…"})
+    return jsonify({"ok": True, "message": f"Added {label} to the whitelist — takes effect immediately."})
 
 
 @app.route("/whitelist/remove", methods=["POST"])
@@ -635,8 +680,7 @@ def whitelist_add():
 def whitelist_remove():
     remove_id = request.form.get("user_id", "").strip()
     if remove_id.isdigit() and remove_allowed(int(remove_id)):
-        restart_bot_async(only_if_running=True)
-        return jsonify({"ok": True, "message": f"Removed {remove_id} from the whitelist. Restarting to apply…"})
+        return jsonify({"ok": True, "message": f"Removed {remove_id} from the whitelist — takes effect immediately."})
     return jsonify({"ok": False, "message": "That entry was already gone."})
 
 
@@ -651,9 +695,14 @@ def admins_add():
     if not add_admin(int(new_id), name):
         return jsonify({"ok": False, "message": f"{new_id} is already an admin."})
 
-    restart_bot_async(only_if_running=True)
     label = f"{new_id} ({name})" if name else new_id
-    return jsonify({"ok": True, "message": f"Added {label} as an admin. Restarting to apply…"})
+    return jsonify(
+        {
+            "ok": True,
+            "message": f"Added {label} as an admin — takes effect immediately. "
+            "Restart the bot to also add /status and /request_list to their command menu.",
+        }
+    )
 
 
 @app.route("/admins/remove", methods=["POST"])
@@ -661,8 +710,7 @@ def admins_add():
 def admins_remove():
     remove_id = request.form.get("user_id", "").strip()
     if remove_id.isdigit() and remove_admin(int(remove_id)):
-        restart_bot_async(only_if_running=True)
-        return jsonify({"ok": True, "message": f"Removed {remove_id} from admins. Restarting to apply…"})
+        return jsonify({"ok": True, "message": f"Removed {remove_id} from admins — takes effect immediately."})
     return jsonify({"ok": False, "message": "That entry was already gone."})
 
 
@@ -671,8 +719,7 @@ def admins_remove():
 def requests_approve():
     user_id = request.form.get("user_id", "").strip()
     if user_id.isdigit() and approve_request(int(user_id)):
-        restart_bot_async(only_if_running=True)
-        return jsonify({"ok": True, "message": f"Approved {user_id} — added to the whitelist. Restarting to apply…"})
+        return jsonify({"ok": True, "message": f"Approved {user_id} — added to the whitelist, takes effect immediately."})
     return jsonify({"ok": False, "message": "That request is no longer there."})
 
 
@@ -683,6 +730,24 @@ def requests_deny():
     if user_id.isdigit() and remove_request(int(user_id)):
         return jsonify({"ok": True, "message": f"Denied {user_id}'s request."})
     return jsonify({"ok": False, "message": "That request is no longer there."})
+
+
+@app.route("/tools/disable", methods=["POST"])
+@requires_auth
+def tools_disable_route():
+    slug = request.form.get("slug", "").strip()
+    if disable_tool(slug):
+        return jsonify({"ok": True, "message": f"Disabled {slug} — takes effect immediately, no restart needed."})
+    return jsonify({"ok": False, "message": f"{slug} was already disabled."})
+
+
+@app.route("/tools/enable", methods=["POST"])
+@requires_auth
+def tools_enable_route():
+    slug = request.form.get("slug", "").strip()
+    if enable_tool(slug):
+        return jsonify({"ok": True, "message": f"Enabled {slug} — takes effect immediately."})
+    return jsonify({"ok": False, "message": f"{slug} was already enabled."})
 
 
 if __name__ == "__main__":

@@ -156,15 +156,19 @@ def approve_request(user_id: int) -> bool:
     return True
 
 
-_access = _load_access()
+def _snapshot_allowed_ids() -> set[int] | None:
+    ids = {e["id"] for e in get_allowed_entries()}
+    return ids or None  # empty means "open to everyone"
 
-# Empty allowed list means "open to everyone" (None) — the bot's
-# long-standing default, unchanged by this move away from .env.
-ALLOWED_USER_IDS = {e["id"] for e in _access["allowed"]} or None
 
-# Empty admin list means "no admins" (fail closed) — admin-only commands
-# should never default to open, unlike the general whitelist above.
-ADMIN_USER_IDS = {e["id"] for e in _access["admins"]}
+# One-off snapshot at import time — used only for informational purposes
+# (the startup log line, and setting up admins' command-menu scope once at
+# boot) where briefly-stale data is harmless. is_allowed()/is_admin() below
+# read live from disk on every call instead of these, specifically so that
+# approving someone (from the web Admin Portal OR the /request_list bot
+# command) takes effect immediately, with no bot restart required.
+ALLOWED_USER_IDS = _snapshot_allowed_ids()
+ADMIN_USER_IDS = {e["id"] for e in get_admin_entries()}
 
 PRIVATE_MESSAGE = (
     "This bot is private.\n\n"
@@ -176,11 +180,12 @@ ADMIN_ONLY_MESSAGE = "This command is for the bot admin only."
 
 
 def is_allowed(user_id: int) -> bool:
-    return ALLOWED_USER_IDS is None or user_id in ALLOWED_USER_IDS
+    allowed = _snapshot_allowed_ids()
+    return allowed is None or user_id in allowed
 
 
 def is_admin(user_id: int) -> bool:
-    return user_id in ADMIN_USER_IDS
+    return any(e["id"] == user_id for e in get_admin_entries())
 
 
 async def deny_access(update) -> None:

@@ -297,8 +297,9 @@ option for that.
 Instead of typing `bot-start.sh`/`bot-stop.sh`/`bot-logs.sh` in Termux, you
 can run the **Admin Portal** — a small web dashboard on your phone with
 Start/Stop/Restart buttons, whitelist/admin management, pending access
-requests to approve or deny, and a live log view. The status badge updates
-live on its own every few seconds (no need
+requests to approve or deny, per-tool enable/disable toggles with usage
+stats, and a live log view. The status badge updates live on its own
+every few seconds (no need
 to hit refresh after clicking Restart), and every action shows an instant
 toast instead of a full page reload:
 
@@ -374,17 +375,41 @@ behavior) — in that case nobody ever needs to request access.
 carried over into `data/access.json` the first time the bot starts after
 upgrading — you can remove them from `.env` afterward.
 
-### Admin-only commands: /status
+### Admin-only commands: /status and /request_list
 
-`/status` reports uptime, tools loaded, whitelist size, and log size — but
-it's gated separately from the general whitelist above, via the **Admins**
+`/status` reports uptime, tools loaded (and how many are disabled),
+whitelist/admin size, pending request count, and log size. `/request_list`
+lists every pending access request right inside Telegram — each with its
+own **✅ Approve** / **❌ Deny** buttons, showing the requester's name,
+username, and ID — so you don't have to open the web Admin Portal just to
+review requests.
+
+Both are gated separately from the general whitelist, via the **Admins**
 section in the Admin Portal (or the `"admins"` list in `data/access.json`).
 **Being on the whitelist does not make you an admin** — this is a fully
-separate list, managed the same way (add/remove via the web UI), and
-defaults to nobody until you add someone. Anyone else who runs `/status`
-gets "This command is for the bot admin only." — and as a UI nicety,
-`/status` won't even show up in the `/` command menu for non-admins (though
-the actual enforcement is the check in the code, not the menu).
+separate list, and defaults to nobody until you add someone. Anyone else
+who runs either command gets "This command is for the bot admin only." —
+and as a UI nicety, neither shows up in the `/` command menu for
+non-admins; admins get them added to their own personal menu automatically
+(though the actual enforcement is the check in the code, not the menu).
+
+Approving/denying either from `/request_list` or the web UI takes effect
+**immediately** — no bot restart needed, since access checks now read
+`data/access.json` live on every message instead of a value cached at
+startup. (The one exception: a brand-new admin's personal `/status` and
+`/request_list` menu entries only appear after the next restart — the
+commands still work immediately if typed manually, this is purely about
+whether they show up in the `/` autocomplete menu.)
+
+### Per-tool enable/disable, and usage stats
+
+The Admin Portal's **Tools** card lists every installed tool with a
+**Disable**/**Enable** toggle and basic usage stats (times used, last
+used). Disabling a tool takes effect **immediately** for everyone — no
+restart, no re-registering anything — and whoever tries a disabled tool
+gets told it's temporarily off by the admin, instead of silence. This
+state lives in `data/tools_state.json` (git-ignored, not personal data,
+just runtime toggles/counters).
 
 ---
 
