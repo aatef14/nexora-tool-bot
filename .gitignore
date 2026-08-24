@@ -5,5 +5,6 @@ __pycache__/
 .venv/
 venv/
 
-# Nexo Notes / Nexo Expense: personal per-user data, not meant for git
+# Whitelist/admin list (access.json), Nexo Password Manager, Nexo Expense:
+# personal data — real Telegram user IDs and credentials, not meant for git
 data/

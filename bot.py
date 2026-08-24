@@ -61,7 +61,7 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     lines = [f"Your Telegram user ID: {user.id}"]
     if user.username:
         lines.append(f"Username: @{user.username}")
-    lines.append("\nAdd this ID to ALLOWED_USER_IDS in .env to whitelist yourself.")
+    lines.append("\nSend this ID to the bot owner to be added to the whitelist.")
     await update.effective_message.reply_text("\n".join(lines))
 
 

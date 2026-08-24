@@ -296,7 +296,10 @@ option for that.
 
 Instead of typing `bot-start.sh`/`bot-stop.sh`/`bot-logs.sh` in Termux, you
 can run the **Admin Portal** — a small web dashboard on your phone with
-Start/Stop/Restart buttons, whitelist management, and a live log view:
+Start/Stop/Restart buttons, whitelist/admin management, and a live log
+view. The status badge updates live on its own every few seconds (no need
+to hit refresh after clicking Restart), and every action shows an instant
+toast instead of a full page reload:
 
 ```bash
 bash web-start.sh
@@ -322,8 +325,20 @@ start/stop your bot.
 ## Whitelisting: restricting who can use the bot
 
 Telegram bots are public by default — anyone who finds the username can
-message it and use your phone's bandwidth/battery/storage. To restrict it to
-yourself (or a few trusted people), for **all tools at once**:
+message it and use your phone's bandwidth/battery/storage. The whitelist
+and admin list live in **`data/access.json`** (not `.env`) — a small
+git-ignored file, managed through the Admin Portal's web UI rather than by
+hand-editing bot config:
+
+```json
+{
+  "allowed": [{"id": 123456789, "name": "Atif"}],
+  "admins": [{"id": 123456789, "name": "Atif"}]
+}
+```
+
+You can edit that file directly if you prefer the terminal, but the Admin
+Portal is easier:
 
 1. Have the person message your bot with `/id` — it replies with their
    numeric Telegram user ID (e.g. `123456789`) and their username
@@ -331,35 +346,28 @@ yourself (or a few trusted people), for **all tools at once**:
 3. Open the **Admin Portal** (`bash web-start.sh`, then `http://localhost:8080`)
    and add it under **Whitelist** — type the ID, optionally a name to
    label it (e.g. "Atif"), and tap **Add**. The bot restarts automatically
-   to apply it.
+   to apply it (you'll see the status badge flip live, no need to refresh).
 
-Prefer the terminal? You can edit `.env` directly instead:
-```bash
-nano .env
-```
-Set `ALLOWED_USER_IDS=123456789` (your ID), optionally with a name:
-`ALLOWED_USER_IDS=123456789:Atif`. Comma-separate more entries:
-`ALLOWED_USER_IDS=123456789:Atif,987654321:Sam`. Then restart:
-`bash bot-stop.sh && bash bot-start.sh`
+Anyone whose ID isn't in `allowed` gets "This bot is private." instead of a
+response, with instructions to send `/id` and pass it to you. An empty
+`allowed` list means anyone can use the bot (unchanged default behavior).
 
-Anyone whose ID isn't in that list gets "This bot is private." instead of a
-response, with instructions to send `/id` and pass it to you. Leaving
-`ALLOWED_USER_IDS` blank allows anyone to use the bot.
+**Upgrading from an older version?** If you previously set
+`ALLOWED_USER_IDS`/`ADMIN_USER_IDS` in `.env`, those are automatically
+carried over into `data/access.json` the first time the bot starts after
+upgrading — you can remove them from `.env` afterward.
 
 ### Admin-only commands: /status
 
 `/status` reports uptime, tools loaded, whitelist size, and log size — but
-it's gated separately from the general whitelist above, via `ADMIN_USER_IDS`
-in `.env` (same `id` or `id:Name` format). **Being on `ALLOWED_USER_IDS`
-does not make you an admin** — this must be set explicitly, and defaults to
-nobody if left blank:
-```
-ADMIN_USER_IDS=123456789:Atif
-```
-Then restart: `bash bot-stop.sh && bash bot-start.sh`. Anyone else who runs
-`/status` gets "This command is for the bot admin only." — and as a UI
-nicety, `/status` won't even show up in the `/` command menu for non-admins
-(though the actual enforcement is the check in the code, not the menu).
+it's gated separately from the general whitelist above, via the **Admins**
+section in the Admin Portal (or the `"admins"` list in `data/access.json`).
+**Being on the whitelist does not make you an admin** — this is a fully
+separate list, managed the same way (add/remove via the web UI), and
+defaults to nobody until you add someone. Anyone else who runs `/status`
+gets "This command is for the bot admin only." — and as a UI nicety,
+`/status` won't even show up in the `/` command menu for non-admins (though
+the actual enforcement is the check in the code, not the menu).
 
 ---
 
