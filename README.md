@@ -162,6 +162,7 @@ command list, and its description all pick it up automatically.
 
 - `/start` — a one-line intro to the bot
 - `/tools` — lists every tool currently installed, with its command
+- `/status` — bot uptime/health (admin only — see [Whitelisting](#whitelisting-restricting-who-can-use-the-bot))
 - `/link2video` — shows usage instructions for Nexo Link2video specifically
 
 You don't actually need to run a tool's command to use it — for
@@ -344,6 +345,21 @@ Set `ALLOWED_USER_IDS=123456789` (your ID), optionally with a name:
 Anyone whose ID isn't in that list gets "This bot is private." instead of a
 response, with instructions to send `/id` and pass it to you. Leaving
 `ALLOWED_USER_IDS` blank allows anyone to use the bot.
+
+### Admin-only commands: /status
+
+`/status` reports uptime, tools loaded, whitelist size, and log size — but
+it's gated separately from the general whitelist above, via `ADMIN_USER_IDS`
+in `.env` (same `id` or `id:Name` format). **Being on `ALLOWED_USER_IDS`
+does not make you an admin** — this must be set explicitly, and defaults to
+nobody if left blank:
+```
+ADMIN_USER_IDS=123456789:Atif
+```
+Then restart: `bash bot-stop.sh && bash bot-start.sh`. Anyone else who runs
+`/status` gets "This command is for the bot admin only." — and as a UI
+nicety, `/status` won't even show up in the `/` command menu for non-admins
+(though the actual enforcement is the check in the code, not the menu).
 
 ---
 

@@ -8,12 +8,13 @@ actual feature logic lives under tools/ — see tools/__init__.py to add one.
 import asyncio
 import logging
 import os
+import time
 
 from dotenv import load_dotenv
-from telegram import BotCommand, Update
+from telegram import BotCommand, BotCommandScopeChat, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-from core.access import ALLOWED_USER_IDS
+from core.access import ADMIN_ONLY_MESSAGE, ADMIN_USER_IDS, ALLOWED_USER_IDS, is_admin
 from tools import TOOLS
 
 load_dotenv()
@@ -25,6 +26,8 @@ OWNER_CONTACT = os.environ.get("OWNER_CONTACT", "Atif")
 MAX_LOG_SIZE_MB = int(os.environ.get("MAX_LOG_SIZE_MB", "20"))
 LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot.log")
 CLEANUP_INTERVAL_SECONDS = 24 * 60 * 60
+
+START_TIME = time.time()
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -59,6 +62,47 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if user.username:
         lines.append(f"Username: @{user.username}")
     lines.append("\nAdd this ID to ALLOWED_USER_IDS in .env to whitelist yourself.")
+    await update.effective_message.reply_text("\n".join(lines))
+
+
+def human_uptime(seconds: float) -> str:
+    seconds = int(seconds)
+    days, seconds = divmod(seconds, 86400)
+    hours, seconds = divmod(seconds, 3600)
+    minutes, seconds = divmod(seconds, 60)
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes:
+        parts.append(f"{minutes}m")
+    if not parts:
+        parts.append(f"{seconds}s")
+    return " ".join(parts)
+
+
+def human_size(num_bytes: int) -> str:
+    size_kb = num_bytes / 1024
+    if size_kb < 1024:
+        return f"{size_kb:.0f}KB"
+    return f"{size_kb / 1024:.1f}MB"
+
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_admin(update.effective_user.id):
+        await update.effective_message.reply_text(ADMIN_ONLY_MESSAGE)
+        return
+
+    log_size = os.path.getsize(LOG_PATH) if os.path.exists(LOG_PATH) else 0
+    lines = [
+        f"📊 {BOT_NAME} status\n",
+        f"Uptime: {human_uptime(time.time() - START_TIME)}",
+        f"Tools loaded: {len(TOOLS)}",
+        f"Whitelist: {'open to everyone' if ALLOWED_USER_IDS is None else f'{len(ALLOWED_USER_IDS)} user(s)'}",
+        f"Admins: {len(ADMIN_USER_IDS)} user(s)",
+        f"Log size: {human_size(log_size)} / {MAX_LOG_SIZE_MB}MB",
+    ]
     await update.effective_message.reply_text("\n".join(lines))
 
 
@@ -143,6 +187,18 @@ async def set_bot_info(app: Application) -> None:
         "set_my_short_description", app.bot.set_my_short_description(short_description[:120])
     )
 
+    # /status is deliberately left out of the default command list above so
+    # it doesn't show up in the "/" menu for regular users — only admins get
+    # it added to their own menu, via a per-chat command scope. This is just
+    # a UI nicety; the actual enforcement is the is_admin() check in
+    # status_command itself, which applies regardless of this scope.
+    admin_commands = commands + [BotCommand("status", "Bot status (admin only)")]
+    for admin_id in ADMIN_USER_IDS:
+        await _try_bot_info_call(
+            f"set_my_commands (admin scope {admin_id})",
+            app.bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=admin_id)),
+        )
+
 
 def main() -> None:
     # Python 3.14 dropped asyncio.get_event_loop()'s auto-create behavior,
@@ -154,16 +210,18 @@ def main() -> None:
     app.add_handler(CommandHandler(["start", "help"], start_command))
     app.add_handler(CommandHandler("tools", tools_command))
     app.add_handler(CommandHandler("id", id_command))
+    app.add_handler(CommandHandler("status", status_command))
     for tool in TOOLS:
         tool.register(app)
     app.add_error_handler(error_handler)
     app.job_queue.run_repeating(daily_cleanup, interval=CLEANUP_INTERVAL_SECONDS, first=60)
 
     logger.info(
-        "%s starting with tools: %s (whitelist: %s)",
+        "%s starting with tools: %s (whitelist: %s, admins: %d)",
         BOT_NAME,
         ", ".join(t.NAME for t in TOOLS),
         "open" if ALLOWED_USER_IDS is None else f"{len(ALLOWED_USER_IDS)} user(s)",
+        len(ADMIN_USER_IDS),
     )
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
