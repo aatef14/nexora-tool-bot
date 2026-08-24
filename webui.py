@@ -396,17 +396,11 @@ function setPendingBadge(label) {
 
 const PENDING_LABELS = { '/start': 'STARTING…', '/stop': 'STOPPING…', '/restart': 'RESTARTING…' };
 
-document.addEventListener('click', async (e) => {
-  const btn = e.target.closest('button[data-action]');
-  if (!btn || btn.disabled) return;
-
-  const action = btn.dataset.action;
-  const form = btn.closest('form');
-  btn.classList.add('is-loading');
-  btn.disabled = true;
+async function runAction(action, btn, form) {
+  if (btn) { btn.classList.add('is-loading'); btn.disabled = true; }
 
   const body = new URLSearchParams();
-  if (btn.dataset.userId) body.set('user_id', btn.dataset.userId);
+  if (btn && btn.dataset.userId) body.set('user_id', btn.dataset.userId);
   if (form) new FormData(form).forEach((v, k) => body.set(k, v));
 
   if (PENDING_LABELS[action]) setPendingBadge(PENDING_LABELS[action]);
@@ -419,13 +413,28 @@ document.addEventListener('click', async (e) => {
     await refreshFragment();
   } catch (err) {
     showToast('Request failed — check your connection.', true);
-    btn.classList.remove('is-loading');
-    btn.disabled = false;
+    if (btn) { btn.classList.remove('is-loading'); btn.disabled = false; }
   }
+}
+
+// Standalone action buttons (start/stop/restart, per-row remove) — these
+// are never inside a <form>, so a plain click is the only signal.
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-action]');
+  if (!btn || btn.disabled || btn.closest('form')) return;
+  runAction(btn.dataset.action, btn, null);
 });
 
+// The two "Add" forms — handled on 'submit' (not 'click') so this also
+// works when Enter is pressed in an input, not just a button tap. Clicking
+// the submit button fires both a click and a submit event; only reacting
+// here (and not in the click handler above, which explicitly skips buttons
+// inside a form) avoids sending the request twice.
 document.addEventListener('submit', (e) => {
-  if (e.target.matches('form.add-form')) e.preventDefault();
+  const form = e.target.closest('form[data-action]');
+  if (!form) return;
+  e.preventDefault();
+  runAction(form.dataset.action, form.querySelector('button[type=submit]'), form);
 });
 
 setInterval(refreshStatusOnly, 3000);
