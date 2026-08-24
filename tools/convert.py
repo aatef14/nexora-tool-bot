@@ -7,7 +7,7 @@ import re
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-from core.access import PRIVATE_MESSAGE, is_allowed
+from core.access import deny_access, is_allowed
 
 NAME = "Nexo Convert"
 SLUG = "convert"
@@ -129,7 +129,7 @@ def convert(value: float, from_unit: str, to_unit: str) -> float:
 async def command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles /convert <number> <from_unit> to <to_unit>."""
     if not is_allowed(update.effective_user.id):
-        await update.effective_message.reply_text(PRIVATE_MESSAGE)
+        await deny_access(update)
         return
 
     args_text = " ".join(context.args) if context.args else ""

@@ -25,7 +25,7 @@ from telegram.ext import (
     filters,
 )
 
-from core.access import PRIVATE_MESSAGE, is_allowed
+from core.access import deny_access, is_allowed
 
 NAME = "Nexo Link2video"
 SLUG = "link2video"
@@ -228,7 +228,7 @@ async def command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles /link2video — shows usage instructions. The tool itself
     activates as soon as a message contains a link, no arguments needed."""
     if not is_allowed(update.effective_user.id):
-        await update.effective_message.reply_text(PRIVATE_MESSAGE)
+        await deny_access(update)
         return
     await update.effective_message.reply_text(USAGE)
 
@@ -237,7 +237,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     message = update.effective_message
 
     if not is_allowed(update.effective_user.id):
-        await message.reply_text(PRIVATE_MESSAGE)
+        await deny_access(update)
         return
 
     text = message.text or ""
@@ -259,7 +259,7 @@ async def handle_format_choice(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
 
     if not is_allowed(update.effective_user.id):
-        await query.edit_message_text(PRIVATE_MESSAGE)
+        await deny_access(update)
         return
 
     _, _, req_id, fmt = query.data.split(":")
@@ -276,7 +276,7 @@ async def handle_quality_choice(update: Update, context: ContextTypes.DEFAULT_TY
     await query.answer()
 
     if not is_allowed(update.effective_user.id):
-        await query.edit_message_text(PRIVATE_MESSAGE)
+        await deny_access(update)
         return
 
     _, _, req_id, fmt, quality = query.data.split(":")

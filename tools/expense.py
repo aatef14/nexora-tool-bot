@@ -9,7 +9,7 @@ from datetime import datetime
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-from core.access import PRIVATE_MESSAGE, is_allowed
+from core.access import deny_access, is_allowed
 
 NAME = "Nexo Expense"
 SLUG = "expense"
@@ -102,7 +102,7 @@ def clear_expenses(user_id: str) -> int:
 
 async def command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update.effective_user.id):
-        await update.effective_message.reply_text(PRIVATE_MESSAGE)
+        await deny_access(update)
         return
 
     message = update.effective_message

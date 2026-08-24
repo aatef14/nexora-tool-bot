@@ -10,10 +10,13 @@ from flask import Flask, Response, jsonify, render_template_string, request
 from core.access import (
     add_admin,
     add_allowed,
+    approve_request,
     get_admin_entries,
     get_allowed_entries,
+    get_requests,
     remove_admin,
     remove_allowed,
+    remove_request,
 )
 
 load_dotenv()
@@ -46,6 +49,31 @@ APP_FRAGMENT = """
     <button class="danger" type="button" data-action="/stop" {{ '' if running else 'disabled' }}>■ Stop</button>
     <button type="button" data-action="/restart">⟳ Restart</button>
   </div>
+</div>
+
+<h3>Pending Requests{% if request_entries %} <span class="count-badge">{{ request_entries|length }}</span>{% endif %}</h3>
+<div class="card">
+  {% if request_entries %}
+  <ul class="entry-list">
+    {% for uid, name, username, requested_at in request_entries %}
+    <li class="entry-row request-row">
+      <span class="entry-avatar request">{{ (name or uid)[0]|upper }}</span>
+      <span class="entry-label">
+        {% if name %}{{ name }}{% else %}{{ uid }}{% endif %}
+        {% if username %}<span class="uid-muted">@{{ username }}</span>{% endif %}
+        <br><span class="uid-muted">ID {{ uid }} · requested {{ requested_at }}</span>
+      </span>
+      <div class="request-actions">
+        <button class="small primary" type="button" data-action="/requests/approve" data-user-id="{{ uid }}">✅ Approve</button>
+        <button class="small danger" type="button" data-action="/requests/deny" data-user-id="{{ uid }}">❌ Deny</button>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="banner info">No pending requests.</div>
+  {% endif %}
+  <p class="hint">A non-whitelisted user who tries to use the bot shows up here automatically — no need for them to send you their ID manually.</p>
 </div>
 
 <h3>Whitelist</h3>
@@ -210,6 +238,23 @@ PAGE = """
     animation: fade-in .25s var(--ease);
   }
   .banner.warning { background: var(--amber-bg); color: var(--amber); }
+  .banner.info { background: var(--blue-bg); color: var(--accent); }
+  .count-badge {
+    background: var(--red);
+    color: #fff;
+    border-radius: 999px;
+    padding: .05rem .5rem;
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: normal;
+    text-transform: none;
+    vertical-align: middle;
+    animation: pop-in .25s var(--ease);
+  }
+  @keyframes pop-in {
+    from { transform: scale(.5); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
   .actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .9rem; }
   button {
     appearance: none;
@@ -278,7 +323,11 @@ PAGE = """
     flex-shrink: 0;
   }
   .entry-avatar.admin { background: var(--amber-bg); color: var(--amber); }
+  .entry-avatar.request { background: var(--red-bg); color: var(--red); }
   .entry-label { flex: 1; }
+  .request-row { align-items: flex-start; }
+  .request-row .entry-label { line-height: 1.4; }
+  .request-actions { display: flex; gap: .4rem; flex-shrink: 0; }
   .hint { color: var(--muted); font-size: .8rem; margin-top: .6rem; }
   pre {
     background: #0a0c10;
@@ -505,29 +554,37 @@ def restart_bot_async(only_if_running: bool = False) -> None:
     threading.Thread(target=restart_bot, kwargs={"only_if_running": only_if_running}, daemon=True).start()
 
 
-def render_fragment(message: str | None = None) -> str:
+def build_context() -> dict:
+    """Shared context for both the full page (index) and the /fragment
+    endpoint used for AJAX refreshes — they must render identically, or the
+    initial page load can show stale/empty placeholders (status, whitelist,
+    admins, pending requests) until some unrelated action happens to
+    trigger a fragment refresh."""
     running = is_running()
-    return render_template_string(
-        APP_FRAGMENT,
+    return dict(
         running=running,
         status_class="running" if running else "stopped",
         status_text="RUNNING" if running else "STOPPED",
         log_tail=tail_log(),
         allowed_entries=[(str(e["id"]), e["name"]) for e in get_allowed_entries()],
         admin_entries=[(str(e["id"]), e["name"]) for e in get_admin_entries()],
+        request_entries=[
+            (str(r["id"]), r.get("name", ""), r.get("username", ""), r.get("requested_at", "")[:16].replace("T", " "))
+            for r in get_requests()
+        ],
     )
 
 
 @app.route("/")
 @requires_auth
 def index():
-    return render_template_string(PAGE)
+    return render_template_string(PAGE, **build_context())
 
 
 @app.route("/fragment")
 @requires_auth
 def fragment():
-    return render_fragment()
+    return render_template_string(APP_FRAGMENT, **build_context())
 
 
 @app.route("/api/status")
@@ -607,6 +664,25 @@ def admins_remove():
         restart_bot_async(only_if_running=True)
         return jsonify({"ok": True, "message": f"Removed {remove_id} from admins. Restarting to apply…"})
     return jsonify({"ok": False, "message": "That entry was already gone."})
+
+
+@app.route("/requests/approve", methods=["POST"])
+@requires_auth
+def requests_approve():
+    user_id = request.form.get("user_id", "").strip()
+    if user_id.isdigit() and approve_request(int(user_id)):
+        restart_bot_async(only_if_running=True)
+        return jsonify({"ok": True, "message": f"Approved {user_id} — added to the whitelist. Restarting to apply…"})
+    return jsonify({"ok": False, "message": "That request is no longer there."})
+
+
+@app.route("/requests/deny", methods=["POST"])
+@requires_auth
+def requests_deny():
+    user_id = request.form.get("user_id", "").strip()
+    if user_id.isdigit() and remove_request(int(user_id)):
+        return jsonify({"ok": True, "message": f"Denied {user_id}'s request."})
+    return jsonify({"ok": False, "message": "That request is no longer there."})
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ import string
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-from core.access import PRIVATE_MESSAGE, is_allowed
+from core.access import deny_access, is_allowed
 
 NAME = "Nexo Password"
 SLUG = "password"
@@ -56,7 +56,7 @@ def generate_password(length: int, use_symbols: bool = True) -> str:
 
 async def command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update.effective_user.id):
-        await update.effective_message.reply_text(PRIVATE_MESSAGE)
+        await deny_access(update)
         return
 
     args = context.args or []

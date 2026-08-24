@@ -296,8 +296,9 @@ option for that.
 
 Instead of typing `bot-start.sh`/`bot-stop.sh`/`bot-logs.sh` in Termux, you
 can run the **Admin Portal** — a small web dashboard on your phone with
-Start/Stop/Restart buttons, whitelist/admin management, and a live log
-view. The status badge updates live on its own every few seconds (no need
+Start/Stop/Restart buttons, whitelist/admin management, pending access
+requests to approve or deny, and a live log view. The status badge updates
+live on its own every few seconds (no need
 to hit refresh after clicking Restart), and every action shows an instant
 toast instead of a full page reload:
 
@@ -337,20 +338,36 @@ hand-editing bot config:
 }
 ```
 
-You can edit that file directly if you prefer the terminal, but the Admin
-Portal is easier:
+### Access requests: no manual /id relaying needed
 
-1. Have the person message your bot with `/id` — it replies with their
-   numeric Telegram user ID (e.g. `123456789`) and their username
-2. They send you that ID
-3. Open the **Admin Portal** (`bash web-start.sh`, then `http://localhost:8080`)
-   and add it under **Whitelist** — type the ID, optionally a name to
-   label it (e.g. "Atif"), and tap **Add**. The bot restarts automatically
-   to apply it (you'll see the status badge flip live, no need to refresh).
+When someone who isn't whitelisted tries to use any tool, the bot
+automatically records a **pending access request** — capturing their
+Telegram ID, name, and username — instead of just telling them to send
+you their ID. They see:
 
-Anyone whose ID isn't in `allowed` gets "This bot is private." instead of a
-response, with instructions to send `/id` and pass it to you. An empty
-`allowed` list means anyone can use the bot (unchanged default behavior).
+```
+This bot is private.
+
+I've sent an access request to the admin — you'll be able to use the bot
+once it's approved.
+```
+
+That request shows up in the Admin Portal under **Pending Requests**, with
+their name/username/ID and a timestamp, and two buttons:
+
+- **✅ Approve** — adds them to the whitelist and restarts the bot to apply it
+- **❌ Deny** — dismisses the request (they can trigger a new one by trying again)
+
+Trying again while a request is already pending doesn't spam duplicates —
+they just get told it's still awaiting approval.
+
+You can still add someone to the whitelist manually (via the **Whitelist**
+card's Add form, or by editing `data/access.json` directly) without them
+ever requesting — the request flow is just there so you don't have to ask
+people to find and relay their own `/id` by hand.
+
+An empty `allowed` list means anyone can use the bot (unchanged default
+behavior) — in that case nobody ever needs to request access.
 
 **Upgrading from an older version?** If you previously set
 `ALLOWED_USER_IDS`/`ADMIN_USER_IDS` in `.env`, those are automatically

@@ -8,10 +8,16 @@ ALLOWED_USER_IDS is a single whitelist for the whole bot (not per-tool) —
 if you're allowed to use the bot at all, you're allowed to use every tool
 in it. ADMIN_USER_IDS is a separate, stricter list for admin-only commands
 (e.g. /status) — being on the general whitelist does NOT imply admin.
+
+A non-whitelisted user who tries to use any tool automatically gets a
+pending access request recorded (data/access.json's "requests" list),
+surfaced in the Admin Portal with Approve/Deny buttons — see deny_access()
+below, which every tool calls instead of just showing a static message.
 """
 
 import json
 import os
+from datetime import datetime, timezone
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 ACCESS_FILE = os.path.join(DATA_DIR, "access.json")
@@ -40,7 +46,7 @@ def _migrate_from_env() -> dict:
     with empty lists without creating the file yet."""
     allowed = _parse_env_user_ids(os.environ.get("ALLOWED_USER_IDS", ""))
     admins = _parse_env_user_ids(os.environ.get("ADMIN_USER_IDS", ""))
-    data = {"allowed": allowed, "admins": admins}
+    data = {"allowed": allowed, "admins": admins, "requests": []}
     if allowed or admins:
         _save_access(data)
     return data
@@ -56,6 +62,7 @@ def _load_access() -> dict:
         return {"allowed": [], "admins": []}
     data.setdefault("allowed", [])
     data.setdefault("admins", [])
+    data.setdefault("requests", [])
     return data
 
 
@@ -111,6 +118,44 @@ def remove_admin(user_id: int) -> bool:
     return _remove_entry("admins", user_id)
 
 
+def get_requests() -> list[dict]:
+    return list(_load_access()["requests"])
+
+
+def add_request(user_id: int, name: str = "", username: str = "") -> bool:
+    """Record a pending whitelist request for user_id. Returns False if one
+    is already pending (no-op, no duplicate spam on repeated attempts)."""
+    data = _load_access()
+    if any(r["id"] == user_id for r in data["requests"]):
+        return False
+    data["requests"].append(
+        {
+            "id": user_id,
+            "name": name,
+            "username": username,
+            "requested_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    _save_access(data)
+    return True
+
+
+def remove_request(user_id: int) -> bool:
+    return _remove_entry("requests", user_id)
+
+
+def approve_request(user_id: int) -> bool:
+    """Approve a pending request: add to the whitelist and clear the
+    request. Returns False if there was no such pending request."""
+    data = _load_access()
+    matching = [r for r in data["requests"] if r["id"] == user_id]
+    if not matching:
+        return False
+    remove_request(user_id)
+    add_allowed(user_id, matching[0].get("name", ""))
+    return True
+
+
 _access = _load_access()
 
 # Empty allowed list means "open to everyone" (None) — the bot's
@@ -136,3 +181,25 @@ def is_allowed(user_id: int) -> bool:
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_USER_IDS
+
+
+async def deny_access(update) -> None:
+    """Reply to a non-whitelisted user, automatically recording (or
+    reusing) a pending whitelist request for them — visible in the Admin
+    Portal with Approve/Deny buttons — instead of relying on them manually
+    finding and relaying their own /id. Works from either a message or a
+    callback-query update, since tools call this from both kinds of
+    handlers."""
+    user = update.effective_user
+    created = add_request(user.id, user.full_name or "", user.username or "")
+    text = (
+        "This bot is private.\n\n"
+        "I've sent an access request to the admin — you'll be able to use "
+        "the bot once it's approved."
+        if created
+        else "This bot is private. Your access request is still pending approval."
+    )
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text)
+    else:
+        await update.effective_message.reply_text(text)

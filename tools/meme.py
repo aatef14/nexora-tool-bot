@@ -20,7 +20,7 @@ from telegram.ext import (
     filters,
 )
 
-from core.access import PRIVATE_MESSAGE, is_allowed
+from core.access import deny_access, is_allowed
 
 NAME = "Nexo Meme"
 SLUG = "meme"
@@ -118,7 +118,7 @@ def render_meme(src_path: str, dst_path: str, top_text: str, bottom_text: str) -
 
 async def command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update.effective_user.id):
-        await update.effective_message.reply_text(PRIVATE_MESSAGE)
+        await deny_access(update)
         return
     await update.effective_message.reply_text(USAGE)
 
@@ -127,7 +127,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     message = update.effective_message
 
     if not is_allowed(update.effective_user.id):
-        await message.reply_text(PRIVATE_MESSAGE)
+        await deny_access(update)
         return
 
     caption = message.caption or ""

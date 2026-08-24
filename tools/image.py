@@ -23,7 +23,7 @@ from telegram.ext import (
     filters,
 )
 
-from core.access import PRIVATE_MESSAGE, is_allowed
+from core.access import deny_access, is_allowed
 
 NAME = "Nexo Image"
 SLUG = "image"
@@ -140,7 +140,7 @@ def apply_operation(src_path: str, dst_path: str, action: str, value: str) -> No
 
 async def command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update.effective_user.id):
-        await update.effective_message.reply_text(PRIVATE_MESSAGE)
+        await deny_access(update)
         return
     await update.effective_message.reply_text(USAGE)
 
@@ -149,7 +149,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     message = update.effective_message
 
     if not is_allowed(update.effective_user.id):
-        await message.reply_text(PRIVATE_MESSAGE)
+        await deny_access(update)
         return
 
     if message.photo:
@@ -168,7 +168,7 @@ async def handle_action_choice(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
 
     if not is_allowed(update.effective_user.id):
-        await query.edit_message_text(PRIVATE_MESSAGE)
+        await deny_access(update)
         return
 
     _, _, req_id, action = query.data.split(":")
@@ -193,7 +193,7 @@ async def handle_run_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await query.answer()
 
     if not is_allowed(update.effective_user.id):
-        await query.edit_message_text(PRIVATE_MESSAGE)
+        await deny_access(update)
         return
 
     _, _, req_id, action, value = query.data.split(":")

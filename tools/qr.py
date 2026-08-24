@@ -14,7 +14,7 @@ import qrcode
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-from core.access import PRIVATE_MESSAGE, is_allowed
+from core.access import deny_access, is_allowed
 
 NAME = "Nexo QR"
 SLUG = "qr"
@@ -53,7 +53,7 @@ async def command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
 
     if not is_allowed(update.effective_user.id):
-        await message.reply_text(PRIVATE_MESSAGE)
+        await deny_access(update)
         return
 
     if not context.args:
