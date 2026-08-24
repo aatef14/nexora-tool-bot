@@ -4,14 +4,17 @@ Flow: /password_manager creates a vault (first time) or signs in (after),
 protected by a master password that is never stored — only used to derive
 an encryption key via PBKDF2, verified against a "canary" token. Signing in
 opens an in-memory session that signs out automatically after 30 seconds of
-inactivity; entries are listed by purpose, and
-revealing one shows the username/password (auto-deleted from the chat after
-a short delay). Adding an entry deletes the purpose/username/password
-messages the user sent, so the plaintext credentials don't linger in chat
-history.
+inactivity; entries are listed by purpose, and revealing one shows the
+username/password (auto-deleted from the chat after a short delay). Every
+question the bot asks (master password, purpose, username, password) and
+the answer to it are deleted from the chat the instant that step is
+processed, so nothing sensitive accumulates in the chat history as you go.
 
 There is deliberately no password recovery: forgetting the master password
-means the vault's entries can never be decrypted again.
+means the old vault's entries can never be decrypted again. The sign-in
+prompt offers a "Forgot password?" option that wipes the unreadable old
+vault so a fresh one can be created — it cannot recover the old entries,
+only clear the way for new ones.
 """
 
 import base64
@@ -42,13 +45,16 @@ EMOJI = "🔑"
 SUMMARY = "An encrypted vault for saved logins — create/sign in, list, reveal, add."
 USAGE = (
     f"{EMOJI} {NAME}\n\n"
-    "/password_manager — create your vault (first time) or sign in.\n\n"
+    "/password_manager — create your vault (first time) or sign in. "
+    "Forgot your master password? There's a button for that on the sign-in "
+    "prompt — it wipes the old (unreadable) vault so you can start fresh.\n\n"
     "Once signed in you'll get buttons to list saved entries, add a new one "
     "(Purpose, Username, Password — one message each), sign out, or delete "
-    "the whole vault. Revealing an entry shows the username/password and "
-    "auto-deletes after {auto_delete} seconds. Adding an entry deletes the "
-    "3 messages you sent for it, so the plaintext never lingers in this "
-    "chat. Signing in expires after {session_ttl} seconds of inactivity.\n\n"
+    "the whole vault. Every question the bot asks and your answer to it "
+    "are deleted from the chat immediately, so nothing lingers. Revealing "
+    "an entry shows the username/password and auto-deletes after "
+    "{auto_delete} seconds. Signing in expires after {session_ttl} seconds "
+    "of inactivity.\n\n"
     "Your master password is never stored — only used to derive the "
     "encryption key. There is NO recovery if you forget it."
 ).format(auto_delete=60, session_ttl=30)
@@ -67,7 +73,7 @@ logger = logging.getLogger("nexora-tool-bot.password_manager")
 
 # In-memory only — never persisted. {user_id: {"key": bytes, "expires": float}}
 SESSIONS: dict[str, dict] = {}
-# In-memory only. {user_id: {"stage": str, "data": dict, "message_ids": list, "created": float}}
+# In-memory only. {user_id: {"stage": str, "data": dict, "prompt_id": int|None, "created": float}}
 PENDING: dict[str, dict] = {}
 
 
@@ -165,6 +171,21 @@ def _delete_vault_confirm_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def _signin_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("❓ Forgot password? Reset vault", callback_data="pm:forgotprompt")]]
+    )
+
+
+def _forgot_confirm_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("⚠️ Yes, delete old vault & start fresh", callback_data="pm:forgotconfirm")],
+            [InlineKeyboardButton("⬅ Cancel", callback_data="pm:forgotcancel")],
+        ]
+    )
+
+
 def _list_keyboard(purposes: list[str]) -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton(f"🔐 {p}", callback_data=f"pm:reveal:{i}")] for i, p in enumerate(purposes)]
     rows.append([InlineKeyboardButton("⬅ Back", callback_data="pm:menu")])
@@ -218,16 +239,24 @@ async def command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     vault = _load().get(user_id)
     if vault is None:
-        PENDING[user_id] = {"stage": "create_master", "data": {}, "message_ids": [], "created": time.time()}
-        await message.reply_text(
+        PENDING[user_id] = {
+            "stage": "create_master", "data": {}, "prompt_id": None, "created": time.time()
+        }
+        prompt = await message.reply_text(
             "No vault yet. Reply with a new master password to create one "
             f"(min {MIN_MASTER_LENGTH} characters).\n\n"
             "There is NO recovery if you forget it — write it down somewhere safe."
         )
+        PENDING[user_id]["prompt_id"] = prompt.message_id
         return
 
-    PENDING[user_id] = {"stage": "signin", "data": {}, "message_ids": [], "created": time.time()}
-    await message.reply_text("🔒 Enter your master password to sign in.")
+    PENDING[user_id] = {
+        "stage": "signin", "data": {}, "prompt_id": None, "created": time.time()
+    }
+    prompt = await message.reply_text(
+        "🔒 Enter your master password to sign in.", reply_markup=_signin_keyboard()
+    )
+    PENDING[user_id]["prompt_id"] = prompt.message_id
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -245,15 +274,22 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     stage = pending["stage"]
     text = message.text or ""
 
+    # Every stage below answers a prompt the bot just asked — delete that
+    # prompt and the user's reply immediately (not batched at the end), so
+    # the chat never accumulates "What's the purpose?" / "Instagram" pairs.
+    prompt_id = pending.get("prompt_id")
+    await _delete_message_safe(context, message.chat_id, message.message_id)
+    if prompt_id:
+        await _delete_message_safe(context, message.chat_id, prompt_id)
+
     if stage == "create_master":
         if len(text) < MIN_MASTER_LENGTH:
-            await _delete_message_safe(context, message.chat_id, message.message_id)
-            await message.reply_text(
+            retry = await message.reply_text(
                 f"Too short — master password must be at least {MIN_MASTER_LENGTH} characters. Try again."
             )
+            pending["prompt_id"] = retry.message_id
             return
 
-        await _delete_message_safe(context, message.chat_id, message.message_id)
         salt = os.urandom(16)
         key = _derive_key(text, salt)
         vaults = _load()
@@ -266,14 +302,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         _set_session(user_id, key)
         PENDING.pop(user_id, None)
         await message.reply_text(
-            "✅ Vault created and you're signed in. I deleted your password message for safety.",
-            reply_markup=_menu_keyboard(),
+            "✅ Vault created and you're signed in.", reply_markup=_menu_keyboard()
         )
         return
 
     if stage == "signin":
         vault = _load().get(user_id)
-        await _delete_message_safe(context, message.chat_id, message.message_id)
 
         if not vault:
             PENDING.pop(user_id, None)
@@ -283,14 +317,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         salt = base64.b64decode(vault["salt"])
         key = _derive_key(text, salt)
         if not _verify_canary(key, vault["canary"]):
-            await message.reply_text("Wrong master password. Try again, or send /password_manager to restart.")
+            retry = await message.reply_text(
+                "Wrong master password. Try again, or send /password_manager to restart.",
+                reply_markup=_signin_keyboard(),
+            )
+            pending["prompt_id"] = retry.message_id
             return
 
         PENDING.pop(user_id, None)
         _set_session(user_id, key)
-        await message.reply_text(
-            "✅ Signed in. I deleted your password message for safety.", reply_markup=_menu_keyboard()
-        )
+        await message.reply_text("✅ Signed in.", reply_markup=_menu_keyboard())
         return
 
     if stage == "add_purpose":
@@ -299,40 +335,33 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         # sign the user out mid-flow.
         if not _get_valid_session(user_id):
             PENDING.pop(user_id, None)
-            await _delete_message_safe(context, message.chat_id, message.message_id)
             await message.reply_text("Your session expired. Sign in again with /password_manager.")
             return
         pending["data"]["purpose"] = text.strip()[:100]
-        pending["message_ids"].append(message.message_id)
         pending["stage"] = "add_username"
-        await message.reply_text("Username?")
+        prompt = await message.reply_text("Username?")
+        pending["prompt_id"] = prompt.message_id
         return
 
     if stage == "add_username":
         if not _get_valid_session(user_id):
-            for mid in pending["message_ids"] + [message.message_id]:
-                await _delete_message_safe(context, message.chat_id, mid)
             PENDING.pop(user_id, None)
             await message.reply_text("Your session expired. Sign in again with /password_manager.")
             return
         pending["data"]["username"] = text.strip()[:200]
-        pending["message_ids"].append(message.message_id)
         pending["stage"] = "add_password"
-        await message.reply_text("Password?")
+        prompt = await message.reply_text("Password?")
+        pending["prompt_id"] = prompt.message_id
         return
 
     if stage == "add_password":
         pending["data"]["password"] = text.strip()[:500]
-        pending["message_ids"].append(message.message_id)
 
         session_key = _get_valid_session(user_id)
         entry_data = dict(pending["data"])
-        message_ids = list(pending["message_ids"])
         PENDING.pop(user_id, None)
 
         if not session_key:
-            for mid in message_ids:
-                await _delete_message_safe(context, message.chat_id, mid)
             await message.reply_text("Your session expired. Sign in again with /password_manager.")
             return
 
@@ -341,12 +370,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         vault.setdefault("entries", []).append(_encrypt_entry(session_key, entry_data))
         _save(vaults)
 
-        for mid in message_ids:
-            await _delete_message_safe(context, message.chat_id, mid)
-
         await message.reply_text(
-            f"✅ Saved '{entry_data['purpose']}'. Cleared those {len(message_ids)} messages from this chat for privacy.",
-            reply_markup=_menu_keyboard(),
+            f"✅ Saved '{entry_data['purpose']}'.", reply_markup=_menu_keyboard()
         )
         return
 
@@ -374,6 +399,36 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.edit_message_text("Signed out.")
         return
 
+    if data == "pm:forgotprompt":
+        await query.edit_message_text(
+            "⚠️ There's no way to recover the old master password — but you "
+            "can wipe the old vault (it's already unreadable without it) "
+            "and start a fresh one. This permanently deletes every entry in "
+            "the old vault. Continue?",
+            reply_markup=_forgot_confirm_keyboard(),
+        )
+        return
+
+    if data == "pm:forgotconfirm":
+        vaults = _load()
+        vaults.pop(user_id, None)
+        _save(vaults)
+        SESSIONS.pop(user_id, None)
+        PENDING.pop(user_id, None)
+        await query.edit_message_text(
+            "🗑 Old vault deleted. Send /password_manager to create a new one."
+        )
+        return
+
+    if data == "pm:forgotcancel":
+        await query.edit_message_text(
+            "🔒 Enter your master password to sign in.", reply_markup=_signin_keyboard()
+        )
+        pending = PENDING.get(user_id)
+        if pending and pending.get("stage") == "signin":
+            pending["prompt_id"] = query.message.message_id
+        return
+
     session_key = _get_valid_session(user_id)
     if not session_key:
         await query.edit_message_text("Your session expired. Send /password_manager to sign in again.")
@@ -395,13 +450,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     if data == "pm:addstart":
+        await query.edit_message_text("What's this password for? (e.g. Instagram) Reply with the purpose.")
         PENDING[user_id] = {
             "stage": "add_purpose",
             "data": {},
-            "message_ids": [],
+            "prompt_id": query.message.message_id,
             "created": time.time(),
         }
-        await query.edit_message_text("What's this password for? (e.g. Instagram) Reply with the purpose.")
         return
 
     if data.startswith("pm:reveal:"):

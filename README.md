@@ -228,6 +228,11 @@ anyone with phone access) can recover it after the fact. This also means
 **there is no recovery** if you forget it — the vault's entries become
 permanently unreadable.
 
+If you forget your master password, the sign-in prompt has a
+**"❓ Forgot password? Reset vault"** button — it can't recover the old
+entries (nothing could, by design), but it wipes the now-permanently-locked
+vault so `/password_manager` can create a fresh one.
+
 Once signed in you get four buttons:
 
 ```
@@ -239,9 +244,10 @@ Once signed in you get four buttons:
 ```
 
 - **Add password** asks for **Purpose**, then **Username**, then
-  **Password** — one message each. The moment all three are saved
-  (encrypted), the bot deletes those 3 messages from the chat, so the
-  plaintext credentials don't sit in your chat history.
+  **Password** — one message each. Every question the bot asks, and your
+  answer to it, is deleted from the chat **immediately** (not batched at
+  the end) — so at no point does the chat show more than the single
+  question currently being asked.
 - **List passwords** shows a button per saved entry, labeled by purpose
   (e.g. "Instagram"). Tapping one decrypts and shows the username/password
   in a tap-to-copy code block — that message **auto-deletes after 60
@@ -256,6 +262,17 @@ Once signed in you get four buttons:
   PBKDF2 (390,000 iterations) and Fernet (AES-128) — stored in
   `data/password_manager.json`. Without the master password (which, again,
   is never stored), that file is unreadable noise.
+
+**On "delete the whole chat after a week":** this isn't something a bot
+can do — Telegram's Bot API hard-caps `deleteMessage` at messages sent
+**less than 48 hours ago**, full stop, for every chat type and regardless
+of admin rights. No amount of code changes that; it's a platform limit.
+Since every sensitive message here is already deleted within seconds
+(rather than left to linger for a week), there's nothing sensitive left
+for a week-later cleanup to catch anyway. If you want the chat's non-bot
+clutter (your own `/password_manager` commands, menu taps, etc.) gone
+periodically, Telegram's own client has a manual **"Clear chat history"**
+option for that.
 
 ### Other tools at a glance
 
