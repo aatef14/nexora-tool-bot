@@ -136,8 +136,16 @@ def build_ydl_opts(out_path: str, url: str, fmt: str, quality: str) -> dict:
         ]
     else:
         height_filter = f"[height<={quality}]" if quality != "best" else ""
+        # Without forcing avc1 (H.264), yt-dlp can pick an AV1-in-MP4 video
+        # stream over an H.264 one at the same resolution (its default
+        # sorting ranks AV1's compression efficiency higher) — but AV1-in-MP4
+        # isn't reliably decoded by many players, including Telegram's own,
+        # which shows up as a blank/black video with the audio track still
+        # playing fine. Preferring avc1 first avoids that; the unfiltered
+        # fallbacks below only kick in if no avc1 stream exists at all.
         opts["format"] = (
-            f"bestvideo{height_filter}[ext=mp4]+bestaudio[ext=m4a]"
+            f"bestvideo{height_filter}[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]"
+            f"/bestvideo{height_filter}[ext=mp4]+bestaudio[ext=m4a]"
             f"/best{height_filter}[ext=mp4]/best{height_filter}/best"
         )
         opts["merge_output_format"] = "mp4"
