@@ -6,6 +6,8 @@ recognize the domain for a friendly label and let yt-dlp fail gracefully on
 anything it can't actually handle.
 """
 
+import asyncio
+import html
 import logging
 import os
 import re
@@ -14,6 +16,7 @@ import tempfile
 import time
 import uuid
 
+import requests
 import yt_dlp
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -181,6 +184,32 @@ def find_output_file(work_dir: str) -> str | None:
     return os.path.join(work_dir, candidates[0])
 
 
+INSTAGRAM_EMBED_IMAGE_RE = re.compile(r'class="EmbeddedMediaImage"[^>]*src="([^"]+)"')
+
+
+def fetch_instagram_image(url: str) -> bytes | None:
+    """Image-with-a-song reels have no video stream, so yt-dlp refuses them
+    ("There is no video in this post"). The public embed page still exposes
+    the picture anonymously, so grab that instead. The song itself isn't
+    exposed there, so this is image-only. Returns None if anything fails."""
+    m = re.search(r"instagram\.com/(?:reel|reels|p|tv)/([\w-]+)", url)
+    if not m:
+        return None
+    try:
+        page = requests.get(
+            f"https://www.instagram.com/p/{m.group(1)}/embed/captioned/",
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=10,
+        )
+        img = INSTAGRAM_EMBED_IMAGE_RE.search(page.text)
+        if page.status_code != 200 or not img:
+            return None
+        pic = requests.get(html.unescape(img.group(1)), timeout=15)
+        return pic.content if pic.status_code == 200 and pic.content else None
+    except requests.RequestException:
+        return None
+
+
 async def process_download(url: str, fmt: str, quality: str, status, reply_target) -> None:
     """Download url as fmt/quality, editing status messages along the way,
     and send the result via reply_target.reply_video/reply_audio."""
@@ -224,7 +253,25 @@ async def process_download(url: str, fmt: str, quality: str, status, reply_targe
 
     except yt_dlp.utils.DownloadError as e:
         logger.warning("Download error for %s: %s", url, e)
-        await status.edit_text(f"Couldn't download that link: {e}")
+        msg = str(e)
+        if "instagram.com" in url and "no video in this post" in msg:
+            image = await asyncio.to_thread(fetch_instagram_image, url)
+            if image:
+                await reply_target.reply_photo(
+                    photo=image,
+                    caption="This post is a picture (with music), not a video, so here's the image. "
+                    "The song itself can't be downloaded from Instagram this way.",
+                )
+                await status.delete()
+                return
+            await status.edit_text("That Instagram post has no video (it's a picture), and I couldn't fetch the image.")
+        elif "instagram.com" in url and "empty media response" in msg:
+            await status.edit_text(
+                "Instagram is blocking anonymous access to that post. It probably needs a login: "
+                "the bot owner can set INSTAGRAM_COOKIES_FILE in .env (see README) to fix this."
+            )
+        else:
+            await status.edit_text(f"Couldn't download that link: {e}")
     except Exception:
         logger.exception("Unexpected error handling %s", url)
         await status.edit_text("Something went wrong processing that link.")
