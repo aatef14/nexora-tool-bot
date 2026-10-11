@@ -182,8 +182,13 @@ Choose a format:
 ```
 
 Then a quality menu appears:
-- **MP4**: Best available, 1080p, 720p, 480p, 360p
+- **MP4**: 📦 Fit under limit, Best available, 1080p, 720p, 480p, 360p
+  ("Fit under limit" automatically picks the highest resolution that still fits
+  Telegram's file-size cap, so you don't get "file too big, try lower quality")
 - **MP3**: 320 kbps, 192 kbps, 128 kbps
+
+While it downloads, the status message shows a live progress bar with
+percent and speed.
 
 Tap one, and the bot downloads and sends the file back with the title,
 uploader, and duration as the caption.

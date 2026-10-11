@@ -64,6 +64,7 @@ PLATFORM_LABELS = [
 URL_RE = re.compile(r"https?://[^\s]+", re.IGNORECASE)
 
 VIDEO_QUALITIES = [
+    ("fit", "📦 Fit under limit"),
     ("best", "Best available"),
     ("1080", "1080p"),
     ("720", "720p"),
@@ -125,6 +126,7 @@ def build_ydl_opts(out_path: str, url: str, fmt: str, quality: str) -> dict:
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
+        "noprogress": True,
         "max_filesize": MAX_FILE_SIZE_MB * 1024 * 1024,
     }
 
@@ -210,6 +212,59 @@ def fetch_instagram_image(url: str) -> bytes | None:
         return None
 
 
+def _format_size(f: dict, duration) -> int | None:
+    size = f.get("filesize") or f.get("filesize_approx")
+    if not size and f.get("tbr") and duration:
+        size = f["tbr"] * 1000 / 8 * duration
+    return int(size) if size else None
+
+
+def pick_fit_height(info: dict, limit_bytes: int) -> int | None:
+    """Highest resolution whose video + best audio should fit in limit_bytes.
+    Sizes are estimates (some sites don't report them), so callers should
+    leave a margin. Returns None if nothing reports a usable size."""
+    duration = info.get("duration")
+    formats = info.get("formats") or []
+
+    audio_sizes = [
+        _format_size(f, duration)
+        for f in formats
+        if f.get("vcodec") == "none" and f.get("ext") == "m4a"
+    ]
+    audio_size = max((a for a in audio_sizes if a), default=0)
+
+    best_by_height: dict[int, int] = {}
+    for f in formats:
+        height = f.get("height")
+        if not height or f.get("vcodec") in (None, "none"):
+            continue
+        size = _format_size(f, duration)
+        if not size:
+            continue
+        if f.get("acodec") == "none":  # video-only: audio gets merged in
+            size += audio_size
+        # Smallest estimate per height: the avc1/mp4 variants are the ones we
+        # actually download, but any variant is a fair size proxy.
+        best_by_height[height] = min(size, best_by_height.get(height, size))
+
+    if not best_by_height:
+        return None
+    fitting = [h for h, size in best_by_height.items() if size <= limit_bytes]
+    return max(fitting) if fitting else min(best_by_height)
+
+
+def progress_text(platform: str, progress: dict) -> str:
+    pct = progress.get("pct")
+    if pct is None:
+        return f"Detected: {platform}\nDownloading..."
+    filled = int(pct / 10)
+    bar = "█" * filled + "░" * (10 - filled)
+    speed = progress.get("speed")
+    speed_text = f" · {speed / (1024 * 1024):.1f} MB/s" if speed else ""
+    step = f" (part {progress['part']})" if progress.get("part", 1) > 1 else ""
+    return f"Detected: {platform}\nDownloading{step}\n{bar} {pct:.0f}%{speed_text}"
+
+
 async def process_download(url: str, fmt: str, quality: str, status, reply_target) -> None:
     """Download url as fmt/quality, editing status messages along the way,
     and send the result via reply_target.reply_video/reply_audio."""
@@ -220,9 +275,52 @@ async def process_download(url: str, fmt: str, quality: str, status, reply_targe
     out_template = os.path.join(work_dir, f"{uuid.uuid4().hex}.%(ext)s")
 
     try:
+        if fmt == "mp4" and quality == "fit":
+            await status.edit_text(f"Detected: {platform}\nChecking sizes...")
+            probe_opts = {"quiet": True, "no_warnings": True, "noplaylist": True, "skip_download": True}
+            if "instagram.com" in url and INSTAGRAM_COOKIES_FILE:
+                probe_opts["cookiefile"] = INSTAGRAM_COOKIES_FILE
+
+            def probe():
+                with yt_dlp.YoutubeDL(probe_opts) as ydl:
+                    return ydl.extract_info(url, download=False)
+
+            probe_info = await asyncio.to_thread(probe)
+            # 10% margin: sizes are estimates and the merge adds container overhead.
+            height = pick_fit_height(probe_info, int(MAX_FILE_SIZE_MB * 1024 * 1024 * 0.9))
+            quality = str(height) if height else "best"
+
+        progress: dict = {}
+
+        def hook(d):
+            if d["status"] == "downloading":
+                total = d.get("total_bytes") or d.get("total_bytes_estimate")
+                if total:
+                    progress["pct"] = d["downloaded_bytes"] / total * 100
+                progress["speed"] = d.get("speed")
+            elif d["status"] == "finished":
+                progress["part"] = progress.get("part", 1) + 1
+                progress["pct"] = None
+
         ydl_opts = build_ydl_opts(out_template, url, fmt, quality)
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+        ydl_opts["progress_hooks"] = [hook]
+
+        def download():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                return ydl.extract_info(url, download=True)
+
+        task = asyncio.create_task(asyncio.to_thread(download))
+        last_text = ""
+        while not task.done():
+            await asyncio.wait({task}, timeout=2.5)
+            text = progress_text(platform, progress)
+            if text != last_text and not task.done():
+                try:
+                    await status.edit_text(text)
+                    last_text = text
+                except Exception:
+                    pass  # rate-limited or unchanged: the next tick retries
+        info = task.result()
 
         file_path = find_output_file(work_dir)
         if not file_path:
